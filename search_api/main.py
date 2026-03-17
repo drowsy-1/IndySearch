@@ -28,8 +28,9 @@ async def lifespan(app: FastAPI):
     )
 
     index_path = Path(INDEX_DIR)
-    if not index_path.exists() or not any(index_path.iterdir()):
-        logger.warning(f"No index found at {INDEX_DIR}. Run 'python -m search_api.indexer' first.")
+    meta_file = index_path / "meta.json"
+    if not meta_file.exists():
+        logger.warning(f"No index found at {INDEX_DIR}. Run the crawler pipeline first.")
         app.state.index = None
     else:
         app.state.index = tantivy.Index.open(str(index_path))
