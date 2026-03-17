@@ -1,0 +1,6 @@
+tantivy>=0.25
+fastapi>=0.100
+uvicorn[standard]>=0.30
+asyncpg>=0.29
+python-dotenv>=1.0
+zstandard>=0.22

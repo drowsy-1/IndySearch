@@ -1,0 +1,45 @@
+# Credentials and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+credentials.json
+service-account*.json
+*secret*.*
+!*secret*.py
+!*secret*.js
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+
+# Tantivy index (large binary files, built at runtime)
+data/index/
+
+# Crawled text data (stored in R2 in production)
+data/texts/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+*.log

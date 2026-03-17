@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About - IndySearch</title>
+    <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Special+Elite&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            font-family: 'Special Elite', monospace;
+            background: linear-gradient(180deg,
+                #0a0f18 0%,
+                #1a2535 40%,
+                #152020 70%,
+                #0a1810 100%
+            );
+            color: #b8d4be;
+        }
+
+        .page {
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 60px 24px 80px;
+        }
+
+        .back-link {
+            display: inline-block;
+            color: #7ab892;
+            text-decoration: none;
+            font-size: 0.95rem;
+            margin-bottom: 30px;
+            transition: color 0.2s;
+        }
+
+        .back-link:hover {
+            color: #f4d03f;
+        }
+
+        h1 {
+            font-family: 'Creepster', cursive;
+            font-size: 2.5rem;
+            color: #f4d03f;
+            text-shadow: 0 0 10px rgba(244, 208, 63, 0.5);
+            margin-bottom: 30px;
+            letter-spacing: 3px;
+        }
+
+        h2 {
+            font-size: 1.3rem;
+            color: #f4d03f;
+            margin-top: 35px;
+            margin-bottom: 12px;
+        }
+
+        p {
+            line-height: 1.8;
+            margin-bottom: 16px;
+            font-size: 0.95rem;
+        }
+
+        a {
+            color: #f4d03f;
+        }
+
+        .tech-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .tech-list li {
+            padding: 6px 0;
+            font-size: 0.95rem;
+        }
+
+        .tech-list li::before {
+            content: '>';
+            color: #f4d03f;
+            margin-right: 10px;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="page">
+        <a href="index.html" class="back-link">&larr; Back to search</a>
+
+        <h1>ABOUT INDYSEARCH</h1>
+
+        <p>
+            IndySearch is a full-text search engine for <a href="https://neocities.org" target="_blank">Neocities</a> &mdash;
+            the indie web hosting platform home to hundreds of thousands of personal websites, art projects, zines, and creative experiments.
+        </p>
+
+        <p>
+            Unlike conventional search engines, IndySearch is built specifically to surface content from the indie web.
+        </p>
+
+        <h2>How it works</h2>
+
+        <p>
+            IndySearch discovers sites by scanning the Neocities browse pages, then looks at each site
+            respecting robots.txt. Page text is extracted, compressed, and stored. A full-text search
+            index is built using Tantivy, with relevance ranking that boosts titles and site names.
+            Search results include highlighted snippets showing exactly where your query matches.
+        </p>
+
+        <h2>Tech stack</h2>
+
+        <ul class="tech-list">
+            <li>Tantivy &mdash; Rust-based full-text search engine</li>
+            <li>FastAPI &mdash; Python async search API</li>
+            <li>PostgreSQL &mdash; site and document metadata</li>
+            <li>Trafilatura &mdash; HTML to text extraction</li>
+            <li>Zstandard &mdash; compressed text storage</li>
+        </ul>
+    </div>
+
+</body>
+</html>

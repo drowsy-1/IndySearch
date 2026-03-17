@@ -1,0 +1,8 @@
+httpx>=0.27,<1.0
+beautifulsoup4>=4.12
+asyncpg>=0.29
+python-dotenv>=1.0
+trafilatura>=1.6
+lxml_html_clean>=0.4
+zstandard>=0.22
+boto3>=1.34

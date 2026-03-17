@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stats - IndySearch</title>
+    <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Special+Elite&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            font-family: 'Special Elite', monospace;
+            background: linear-gradient(180deg,
+                #0a0f18 0%,
+                #1a2535 40%,
+                #152020 70%,
+                #0a1810 100%
+            );
+            color: #b8d4be;
+        }
+
+        .page {
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 60px 24px 80px;
+        }
+
+        .back-link {
+            display: inline-block;
+            color: #7ab892;
+            text-decoration: none;
+            font-size: 0.95rem;
+            margin-bottom: 30px;
+            transition: color 0.2s;
+        }
+
+        .back-link:hover {
+            color: #f4d03f;
+        }
+
+        h1 {
+            font-family: 'Creepster', cursive;
+            font-size: 2.5rem;
+            color: #f4d03f;
+            text-shadow: 0 0 10px rgba(244, 208, 63, 0.5);
+            margin-bottom: 30px;
+            letter-spacing: 3px;
+        }
+
+        h2 {
+            font-size: 1.3rem;
+            color: #f4d03f;
+            margin-top: 35px;
+            margin-bottom: 12px;
+        }
+
+        .stats-box {
+            background: rgba(15, 25, 20, 0.85);
+            border: 2px solid #2a4035;
+            border-radius: 6px;
+            padding: 20px 24px;
+            margin: 24px 0;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(42, 64, 53, 0.5);
+        }
+
+        .stat-row:last-child {
+            border-bottom: none;
+        }
+
+        .stat-label {
+            color: #7ab892;
+        }
+
+        .stat-value {
+            color: #f4d03f;
+            font-weight: bold;
+        }
+
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+            font-size: 0.85rem;
+        }
+
+        .history-table th {
+            text-align: left;
+            color: #7ab892;
+            padding: 10px 8px;
+            border-bottom: 2px solid #2a4035;
+            font-weight: normal;
+        }
+
+        .history-table td {
+            padding: 8px;
+            border-bottom: 1px solid rgba(42, 64, 53, 0.3);
+            color: #b8d4be;
+        }
+
+        .history-table tr:hover td {
+            background: rgba(244, 208, 63, 0.03);
+        }
+
+        .history-table .num {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .no-data {
+            color: #4a6a5a;
+            font-style: italic;
+            padding: 16px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <a href="index.html" class="back-link">&larr; Back to search</a>
+
+        <h1>STATS</h1>
+
+        <h2>Live status</h2>
+
+        <div class="stats-box">
+            <div class="stat-row">
+                <span class="stat-label">Index status</span>
+                <span class="stat-value" id="statStatus">Loading...</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Pages in search index</span>
+                <span class="stat-value" id="statDocs">--</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Sites indexed</span>
+                <span class="stat-value" id="statSites">--</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Last crawl</span>
+                <span class="stat-value" id="statLastCrawl">--</span>
+            </div>
+        </div>
+
+        <h2>Crawl history</h2>
+
+        <div id="historyContainer">
+            <p class="no-data">Loading...</p>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script>
+
+        (async function loadStats() {
+            try {
+                const res = await fetch(`${API_BASE}/admin/stats`);
+                const stats = await res.json();
+
+                document.getElementById('statStatus').textContent = stats.index_loaded ? '(OwO)' : '(uwu)';
+                document.getElementById('statDocs').textContent =
+                    stats.num_docs !== null ? stats.num_docs.toLocaleString() : '--';
+                document.getElementById('statLastCrawl').textContent = stats.last_crawl || '--';
+
+                if (stats.crawl_history.length > 0) {
+                    const latest = stats.crawl_history[0];
+                    document.getElementById('statSites').textContent = latest.total_sites.toLocaleString();
+                }
+
+                const container = document.getElementById('historyContainer');
+                if (stats.crawl_history.length === 0) {
+                    container.innerHTML = '<p class="no-data">No crawl history yet</p>';
+                    return;
+                }
+
+                let html = `<table class="history-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th class="num">Sites crawled</th>
+                            <th class="num">Pages indexed</th>
+                            <th class="num">Total sites</th>
+                            <th class="num">Total pages</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+                stats.crawl_history.forEach(snap => {
+                    const date = new Date(snap.completed_at);
+                    const dateStr = date.toLocaleDateString('en-US', {
+                        year: 'numeric', month: 'long'
+                    });
+                    html += `<tr>
+                        <td>${dateStr}</td>
+                        <td class="num">${snap.sites_crawled.toLocaleString()}</td>
+                        <td class="num">${snap.pages_indexed.toLocaleString()}</td>
+                        <td class="num">${snap.total_sites.toLocaleString()}</td>
+                        <td class="num">${snap.total_documents.toLocaleString()}</td>
+                    </tr>`;
+                });
+
+                html += '</tbody></table>';
+                container.innerHTML = html;
+
+            } catch (err) {
+                document.getElementById('statStatus').textContent = 'Unavailable';
+                document.getElementById('historyContainer').innerHTML =
+                    '<p class="no-data">Could not load stats</p>';
+            }
+        })();
+    </script>
+</body>
+</html>

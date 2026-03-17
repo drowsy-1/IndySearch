@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IndySearch - Search the Indie Web</title>
+    <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Special+Elite&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            overflow-x: hidden;
+            font-family: 'Special Elite', monospace;
+            background: linear-gradient(180deg, 
+                #0a0f18 0%, 
+                #1a2535 40%,
+                #152020 70%,
+                #0a1810 100%
+            );
+            cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23f4d03f' d='M12 2L9 9H2l6 4.5L5.5 22 12 17l6.5 5-2.5-8.5L22 9h-7z'/%3E%3C/svg%3E"), auto;
+        }
+
+        .forest-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            z-index: 0;
+        }
+
+        .mist {
+            position: absolute;
+            width: 200%;
+            height: 100%;
+            background: linear-gradient(90deg, 
+                transparent 0%,
+                rgba(40, 80, 60, 0.15) 25%,
+                transparent 50%,
+                rgba(30, 60, 50, 0.1) 75%,
+                transparent 100%
+            );
+            animation: mistFloat 30s ease-in-out infinite;
+            z-index: 15;
+        }
+
+        .mist:nth-child(2) {
+            animation-delay: -15s;
+            opacity: 0.7;
+        }
+
+        @keyframes mistFloat {
+            0%, 100% { transform: translateX(-25%); }
+            50% { transform: translateX(0%); }
+        }
+
+        .tree-layer, .city-layer {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-around;
+            align-items: flex-end;
+            transition: transform 0.1s ease-out;
+        }
+
+        .city-layer {
+            align-items: flex-end;
+        }
+
+        .tree {
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .tree svg, .building svg {
+            display: block;
+            filter: drop-shadow(0 0 10px rgba(0,0,0,0.5));
+        }
+
+        /* Fireflies */
+        .firefly {
+            position: absolute;
+            width: 6px;
+            height: 6px;
+            background: radial-gradient(circle, #fff8a0 0%, #f4d03f 40%, transparent 70%);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 25;
+            animation: fireflyFloat 8s ease-in-out infinite;
+        }
+
+        .firefly::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            background: radial-gradient(circle, rgba(244, 208, 63, 0.3) 0%, transparent 70%);
+            border-radius: 50%;
+            animation: fireflyGlow 2s ease-in-out infinite;
+        }
+
+        @keyframes fireflyFloat {
+            0%, 100% { 
+                transform: translate(0, 0) scale(1);
+                opacity: 0.8;
+            }
+            25% { 
+                transform: translate(30px, -20px) scale(1.2);
+                opacity: 1;
+            }
+            50% { 
+                transform: translate(-20px, -40px) scale(0.8);
+                opacity: 0.6;
+            }
+            75% { 
+                transform: translate(15px, -15px) scale(1.1);
+                opacity: 1;
+            }
+        }
+
+        @keyframes fireflyGlow {
+            0%, 100% { opacity: 0.5; transform: translate(-50%, -50%) scale(1); }
+            50% { opacity: 1; transform: translate(-50%, -50%) scale(1.5); }
+        }
+
+        /* Main content */
+        .main-content {
+            position: relative;
+            z-index: 30;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            transition: justify-content 0.3s ease;
+        }
+
+        .main-content.has-results {
+            justify-content: flex-start;
+            padding-top: 60px;
+        }
+
+        .logo-container {
+            margin-bottom: 30px;
+            text-align: center;
+            animation: logoFloat 4s ease-in-out infinite;
+        }
+
+        @keyframes logoFloat {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .logo {
+            font-family: 'Creepster', cursive;
+            font-size: clamp(3rem, 8vw, 6rem);
+            color: #f4d03f;
+            text-shadow: 
+                0 0 10px rgba(244, 208, 63, 0.8),
+                0 0 20px rgba(244, 208, 63, 0.5),
+                3px 3px 0 #1a2f1a,
+                6px 6px 0 #0d1810;
+            letter-spacing: 4px;
+        }
+
+        .tagline {
+            font-size: clamp(0.8rem, 2vw, 1.1rem);
+            color: #7ab892;
+            margin-top: 10px;
+            opacity: 0.9;
+            letter-spacing: 2px;
+        }
+
+        .search-container {
+            width: 100%;
+            max-width: 600px;
+            position: relative;
+        }
+
+        .search-box {
+            width: 100%;
+            padding: 18px 60px 18px 25px;
+            font-family: 'Special Elite', monospace;
+            font-size: 1.2rem;
+            color: #e8f5e9;
+            background: linear-gradient(135deg, #1a2f23 0%, #0d1810 100%);
+            border: 4px solid #3d5a4a;
+            border-radius: 8px;
+            outline: none;
+            transition: all 0.3s ease;
+            box-shadow: 
+                inset 0 2px 10px rgba(0,0,0,0.5),
+                0 4px 15px rgba(0,0,0,0.3);
+        }
+
+        .search-box::placeholder {
+            color: #4a6a5a;
+        }
+
+        .search-box:focus {
+            border-color: #f4d03f;
+            box-shadow: 
+                inset 0 2px 10px rgba(0,0,0,0.5),
+                0 0 20px rgba(244, 208, 63, 0.3),
+                0 4px 15px rgba(0,0,0,0.3);
+        }
+
+        .search-btn {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 45px;
+            height: 45px;
+            background: linear-gradient(135deg, #f4d03f 0%, #c9a227 100%);
+            border: 3px solid #2d3a2d;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .search-btn:hover {
+            transform: translateY(-50%) scale(1.1);
+            box-shadow: 0 0 15px rgba(244, 208, 63, 0.5);
+        }
+
+        .search-btn:active {
+            transform: translateY(-50%) scale(0.95);
+        }
+
+        .search-btn svg {
+            width: 24px;
+            height: 24px;
+            fill: #1a2f1a;
+        }
+
+        .links-section {
+            margin-top: 40px;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .link-btn {
+            padding: 12px 25px;
+            font-family: 'Special Elite', monospace;
+            font-size: 0.95rem;
+            color: #b8d4be;
+            background: rgba(26, 47, 35, 0.8);
+            border: 3px solid #3d5a4a;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .link-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(244, 208, 63, 0.2), transparent);
+            transition: left 0.4s ease;
+        }
+
+        .link-btn:hover {
+            border-color: #f4d03f;
+            color: #f4d03f;
+            transform: translateY(-3px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+
+        .link-btn:hover::before {
+            left: 100%;
+        }
+
+        .mystery-symbol {
+            position: fixed;
+            font-size: 2rem;
+            color: rgba(244, 208, 63, 0.1);
+            pointer-events: none;
+            animation: symbolPulse 3s ease-in-out infinite;
+            z-index: 5;
+        }
+
+        @keyframes symbolPulse {
+            0%, 100% { opacity: 0.1; transform: scale(1); }
+            50% { opacity: 0.3; transform: scale(1.1); }
+        }
+
+        .forest-container::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 50%;
+            background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0) 100%);
+            z-index: 26;
+            pointer-events: none;
+        }
+
+        .footer {
+            position: fixed;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            color: #4a6a5a;
+            font-size: 0.85rem;
+            z-index: 31;
+        }
+
+        .footer span {
+            color: #f4d03f;
+        }
+
+        /* Stars */
+        .star {
+            position: fixed;
+            width: 2px;
+            height: 2px;
+            background: #fff;
+            border-radius: 50%;
+            animation: starTwinkle 3s ease-in-out infinite;
+            z-index: 1;
+        }
+
+        @keyframes starTwinkle {
+            0%, 100% { opacity: 0.3; transform: scale(1); }
+            50% { opacity: 0.8; transform: scale(1.2); }
+        }
+
+        /* Results */
+        .results-container {
+            width: 100%;
+            max-width: 600px;
+            margin-top: 20px;
+        }
+
+        .results-info {
+            color: #7ab892;
+            font-size: 0.9rem;
+            margin-bottom: 12px;
+            padding: 0 4px;
+        }
+
+        .results-loading {
+            text-align: center;
+            color: #7ab892;
+            padding: 30px 0;
+            font-size: 1rem;
+        }
+
+        .result-card {
+            display: block;
+            background: rgba(15, 25, 20, 0.85);
+            border: 2px solid #2a4035;
+            border-radius: 6px;
+            padding: 16px 20px;
+            margin-bottom: 10px;
+            transition: border-color 0.2s ease, transform 0.2s ease;
+            cursor: pointer;
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .result-card:hover {
+            border-color: #f4d03f;
+            transform: translateX(4px);
+        }
+
+        .result-title {
+            font-size: 1.1rem;
+            margin-bottom: 4px;
+            color: #f4d03f;
+        }
+
+        .result-url {
+            font-size: 0.8rem;
+            color: #4a7a5a;
+            margin-bottom: 8px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .result-snippet {
+            color: #b8d4be;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            margin-bottom: 8px;
+        }
+
+        .result-snippet b {
+            color: #f4d03f;
+            font-weight: bold;
+        }
+
+        .result-meta {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .result-tag {
+            font-size: 0.75rem;
+            color: #7ab892;
+            background: rgba(122, 184, 146, 0.1);
+            border: 1px solid #2a4035;
+            border-radius: 3px;
+            padding: 2px 8px;
+        }
+
+        .result-sitename {
+            font-size: 0.8rem;
+            color: #5a8a6a;
+        }
+
+        .results-pagination {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .results-pagination button {
+            font-family: 'Special Elite', monospace;
+            font-size: 0.9rem;
+            color: #b8d4be;
+            background: rgba(26, 47, 35, 0.8);
+            border: 2px solid #3d5a4a;
+            border-radius: 4px;
+            padding: 8px 20px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .results-pagination button:hover {
+            border-color: #f4d03f;
+            color: #f4d03f;
+        }
+
+        .results-pagination button:disabled {
+            opacity: 0.3;
+            cursor: default;
+        }
+
+        .results-pagination button.page-num {
+            padding: 8px 14px;
+            min-width: 38px;
+        }
+
+        .results-pagination button.page-num.active {
+            border-color: #f4d03f;
+            color: #f4d03f;
+            background: rgba(244, 208, 63, 0.15);
+        }
+
+        .page-ellipsis {
+            color: #4a6a5a;
+            padding: 0 4px;
+            align-self: center;
+        }
+
+        /* Mobile adjustments */
+        @media (max-width: 600px) {
+            .links-section {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .link-btn {
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="forest-container" id="forest">
+        <div class="mist"></div>
+        <div class="mist"></div>
+    </div>
+
+    <div class="main-content">
+        <div class="logo-container">
+            <h1 class="logo">INDYSEARCH</h1>
+            <p class="tagline">Search the indie web</p>
+        </div>
+
+        <div class="search-container">
+            <input type="text" class="search-box" placeholder="Search Neocities..." id="searchInput">
+            <button class="search-btn" id="searchBtn">
+                <svg viewBox="0 0 24 24">
+                    <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                </svg>
+            </button>
+        </div>
+
+        <div class="links-section">
+            <a href="about.html" class="link-btn">About</a>
+            <a href="stats.html" class="link-btn">Stats</a>
+            <a href="optout.html" class="link-btn">Opt Out</a>
+        </div>
+
+        <div class="results-container" id="resultsContainer"></div>
+    </div>
+
+    <div class="footer" id="footer">
+        Searching the <span>indie web</span>
+    </div>
+
+    <script src="config.js"></script>
+    <script>
+        const forest = document.getElementById('forest');
+        const treeLayers = [];
+
+        // Color palettes for different tree depths
+        const treePalettes = [
+            { base: '#0a1510', mid: '#152520', top: '#1a3030', trunk: '#1a1510', outline: '#050a05' },
+            { base: '#102018', mid: '#1a3528', top: '#254535', trunk: '#201810', outline: '#0a100a' },
+            { base: '#182820', mid: '#254538', top: '#356048', trunk: '#2a1a10', outline: '#0d150d' },
+            { base: '#203528', mid: '#355a48', top: '#487a60', trunk: '#352015', outline: '#101a10' },
+            { base: '#284030', mid: '#487060', top: '#609078', trunk: '#402a18', outline: '#152015' },
+        ];
+
+        // City building colors
+        const cityColors = {
+            building: '#0f1825',
+            outline: '#1a2535',
+            windowOn: '#f4d03f',
+            windowOff: '#1a2a35'
+        };
+
+        // Create Gravity Falls style tree
+        function createTreeSVG(height, palette, variation = 0) {
+            const width = height * 0.7;
+            const trunkWidth = width * 0.15;
+            const trunkHeight = height * 0.25;
+            
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('width', width);
+            svg.setAttribute('height', height);
+            svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+            
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+            gradient.setAttribute('id', `treeGrad${Date.now()}${Math.random()}`);
+            gradient.setAttribute('x1', '0%');
+            gradient.setAttribute('y1', '100%');
+            gradient.setAttribute('x2', '0%');
+            gradient.setAttribute('y2', '0%');
+            
+            const stop1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+            stop1.setAttribute('offset', '0%');
+            stop1.setAttribute('stop-color', palette.base);
+            
+            const stop2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+            stop2.setAttribute('offset', '50%');
+            stop2.setAttribute('stop-color', palette.mid);
+            
+            const stop3 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+            stop3.setAttribute('offset', '100%');
+            stop3.setAttribute('stop-color', palette.top);
+            
+            gradient.appendChild(stop1);
+            gradient.appendChild(stop2);
+            gradient.appendChild(stop3);
+            defs.appendChild(gradient);
+            svg.appendChild(defs);
+            
+            const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            
+            // Trunk
+            const trunk = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            const trunkX = width / 2;
+            const trunkPath = `M ${trunkX - trunkWidth/2} ${height - trunkHeight} 
+                              L ${trunkX - trunkWidth/3} ${height} 
+                              L ${trunkX + trunkWidth/3} ${height} 
+                              L ${trunkX + trunkWidth/2} ${height - trunkHeight} Z`;
+            trunk.setAttribute('d', trunkPath);
+            trunk.setAttribute('fill', palette.trunk);
+            trunk.setAttribute('stroke', palette.outline);
+            trunk.setAttribute('stroke-width', '3');
+            group.appendChild(trunk);
+            
+            // Tree foliage
+            const foliage = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            const tip = height * 0.08;
+            const baseY = height - trunkHeight + 5;
+            
+            const segments = 3 + Math.floor(Math.random() * 2);
+            let pathD = '';
+            
+            for (let i = 0; i < segments; i++) {
+                const segTop = tip + (baseY - tip) * (i / segments);
+                const segBottom = tip + (baseY - tip) * ((i + 1) / segments);
+                const segWidth = width * (0.3 + (i * 0.25 / segments));
+                const centerX = width / 2;
+                
+                pathD += `M ${centerX} ${segTop} 
+                         L ${centerX - segWidth} ${segBottom - 5} `;
+                
+                const notchDepth = segWidth * 0.15;
+                const notchWidth = segWidth * 0.3;
+                pathD += `L ${centerX - notchWidth} ${segBottom - 2} 
+                         L ${centerX - notchWidth + notchDepth} ${segBottom + notchDepth} 
+                         L ${centerX + notchWidth - notchDepth} ${segBottom + notchDepth} 
+                         L ${centerX + notchWidth} ${segBottom - 2} `;
+                
+                pathD += `L ${centerX + segWidth} ${segBottom - 5} Z `;
+            }
+            
+            foliage.setAttribute('d', pathD);
+            foliage.setAttribute('fill', `url(#${gradient.getAttribute('id')})`);
+            foliage.setAttribute('stroke', palette.outline);
+            foliage.setAttribute('stroke-width', '4');
+            foliage.setAttribute('stroke-linejoin', 'round');
+            group.appendChild(foliage);
+            
+            svg.appendChild(group);
+            return svg;
+        }
+
+        // Create City Building
+        function createBuildingSVG(width, height) {
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('width', width);
+            svg.setAttribute('height', height);
+            svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+            
+            const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            
+            // Building body
+            const building = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            building.setAttribute('x', '2');
+            building.setAttribute('y', '2');
+            building.setAttribute('width', width - 4);
+            building.setAttribute('height', height - 2);
+            building.setAttribute('fill', cityColors.building);
+            building.setAttribute('stroke', cityColors.outline);
+            building.setAttribute('stroke-width', '3');
+            building.setAttribute('rx', '1');
+            group.appendChild(building);
+            
+            // Roof detail
+            if (Math.random() > 0.5) {
+                const roof = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                roof.setAttribute('x', width * 0.3);
+                roof.setAttribute('y', '0');
+                roof.setAttribute('width', width * 0.4);
+                roof.setAttribute('height', '8');
+                roof.setAttribute('fill', cityColors.building);
+                roof.setAttribute('stroke', cityColors.outline);
+                roof.setAttribute('stroke-width', '2');
+                group.appendChild(roof);
+            }
+            
+            // Windows
+            const windowRows = Math.floor(height / 30);
+            const windowCols = Math.floor(width / 25);
+            const windowWidth = 8;
+            const windowHeight = 10;
+            
+            for (let row = 0; row < windowRows; row++) {
+                for (let col = 0; col < windowCols; col++) {
+                    // Randomly skip windows
+                    if (Math.random() > 0.8) continue;
+                    
+                    const wx = 8 + col * (width - 16) / windowCols;
+                    const wy = 12 + row * (height - 20) / windowRows;
+                    
+                    const win = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                    win.setAttribute('x', wx);
+                    win.setAttribute('y', wy);
+                    win.setAttribute('width', windowWidth);
+                    win.setAttribute('height', windowHeight);
+                    
+                    // Random light on/off
+                    const isLit = Math.random() > 0.6;
+                    if (isLit) {
+                        win.setAttribute('fill', cityColors.windowOn);
+                        win.setAttribute('opacity', 0.7 + Math.random() * 0.3);
+                        // Add glow effect
+                        win.setAttribute('filter', 'url(#windowGlow)');
+                    } else {
+                        win.setAttribute('fill', cityColors.windowOff);
+                    }
+                    group.appendChild(win);
+                }
+            }
+            
+            svg.appendChild(group);
+            return svg;
+        }
+
+        // Create City Layer
+        function createCityLayer(zIndex, bottomOffset, scale = 1) {
+            const layer = document.createElement('div');
+            layer.className = 'city-layer';
+            layer.style.zIndex = zIndex;
+            layer.style.bottom = `${bottomOffset}px`;
+            
+            // Add glow filter for windows
+            const glowDef = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            glowDef.innerHTML = `
+                <defs>
+                    <filter id="windowGlow" x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+                        <feMerge>
+                            <feMergeNode in="coloredBlur"/>
+                            <feMergeNode in="SourceGraphic"/>
+                        </feMerge>
+                    </filter>
+                </defs>
+            `;
+            glowDef.style.position = 'absolute';
+            glowDef.style.width = '0';
+            glowDef.style.height = '0';
+            forest.appendChild(glowDef);
+            
+            const buildingCount = Math.floor(12 * scale) + 8;
+            let totalWidth = 0;
+            const buildings = [];
+            
+            for (let i = 0; i < buildingCount; i++) {
+                const bWidth = (45 + Math.random() * 60) * scale;
+                const bHeight = (180 + Math.random() * 320) * scale;
+                buildings.push({ width: bWidth, height: bHeight });
+                totalWidth += bWidth + 5;
+            }
+            
+            // Shuffle buildings for variety
+            buildings.sort(() => Math.random() - 0.5);
+            
+            buildings.forEach((b, i) => {
+                const building = document.createElement('div');
+                building.classList.add('building');
+                building.style.marginLeft = `${-5 + Math.random() * 10}px`;
+                building.appendChild(createBuildingSVG(b.width, b.height));
+                layer.appendChild(building);
+            });
+            
+            forest.appendChild(layer);
+            return { element: layer, speed: 0.005 * scale };
+        }
+
+        // Create Tree Layers
+        function createTreeLayers() {
+            const layerConfigs = [
+                { count: 8, heightRange: [150, 220], palette: 0, bottom: 0, speed: 0.01 },
+                { count: 10, heightRange: [180, 260], palette: 1, bottom: 0, speed: 0.02 },
+                { count: 12, heightRange: [220, 320], palette: 2, bottom: 0, speed: 0.03 },
+                { count: 14, heightRange: [280, 380], palette: 3, bottom: 0, speed: 0.04 },
+                { count: 16, heightRange: [350, 450], palette: 4, bottom: 0, speed: 0.05 },
+            ];
+
+            layerConfigs.forEach((config, layerIndex) => {
+                const layer = document.createElement('div');
+                layer.className = 'tree-layer';
+                layer.style.zIndex = 20 + layerIndex;
+                layer.style.bottom = `${config.bottom}px`;
+                layer.dataset.speed = config.speed;
+                
+                for (let i = 0; i < config.count; i++) {
+                    const tree = document.createElement('div');
+                    tree.className = 'tree';
+                    const height = config.heightRange[0] + Math.random() * (config.heightRange[1] - config.heightRange[0]);
+                    const palette = treePalettes[config.palette];
+                    tree.appendChild(createTreeSVG(height, palette, i));
+                    tree.style.marginLeft = `${-20 + Math.random() * 40}px`;
+                    tree.style.marginRight = `${-20 + Math.random() * 40}px`;
+                    layer.appendChild(tree);
+                }
+                
+                forest.appendChild(layer);
+                treeLayers.push({ element: layer, speed: config.speed });
+            });
+        }
+
+        // Create Fireflies
+        function createFireflies() {
+            for (let i = 0; i < 25; i++) {
+                const firefly = document.createElement('div');
+                firefly.className = 'firefly';
+                firefly.style.left = `${Math.random() * 100}%`;
+                firefly.style.top = `${20 + Math.random() * 60}%`;
+                firefly.style.animationDelay = `${Math.random() * 8}s`;
+                firefly.style.animationDuration = `${6 + Math.random() * 6}s`;
+                forest.appendChild(firefly);
+            }
+        }
+
+        // Create Stars
+        function createStars() {
+            for (let i = 0; i < 50; i++) {
+                const star = document.createElement('div');
+                star.className = 'star';
+                star.style.left = `${Math.random() * 100}%`;
+                star.style.top = `${Math.random() * 40}%`;
+                star.style.animationDelay = `${Math.random() * 3}s`;
+                star.style.animationDuration = `${2 + Math.random() * 2}s`;
+                forest.appendChild(star);
+            }
+        }
+
+        // Parallax
+        let mouseX = 0, mouseY = 0;
+        let targetX = 0, targetY = 0;
+        
+        const cityLayers = [];
+
+        document.addEventListener('mousemove', (e) => {
+            targetX = (e.clientX - window.innerWidth / 2) / window.innerWidth;
+            targetY = (e.clientY - window.innerHeight / 2) / window.innerHeight;
+        });
+
+        function animateParallax() {
+            mouseX += (targetX - mouseX) * 0.05;
+            mouseY += (targetY - mouseY) * 0.05;
+            
+            treeLayers.forEach((layer, index) => {
+                const offsetX = mouseX * layer.speed * 1000 * (index + 1) * 0.3;
+                const offsetY = mouseY * layer.speed * 200 * (index + 1) * 0.2;
+                layer.element.style.transform = `translateX(${offsetX}px) translateY(${offsetY}px)`;
+            });
+            
+            cityLayers.forEach((layer) => {
+                const offsetX = mouseX * layer.speed * 500;
+                layer.element.style.transform = `translateX(${offsetX}px)`;
+            });
+            
+            requestAnimationFrame(animateParallax);
+        }
+
+        // Search
+        const RESULTS_PER_PAGE = 20;
+        let currentQuery = '';
+        let currentOffset = 0;
+        let totalResults = 0;
+
+        const searchInput = document.getElementById('searchInput');
+        const searchBtn = document.getElementById('searchBtn');
+        const resultsContainer = document.getElementById('resultsContainer');
+
+        async function performSearch(offset = 0) {
+            const query = searchInput.value.trim();
+            if (!query) return;
+
+            currentQuery = query;
+            currentOffset = offset;
+
+            document.querySelector('.main-content').classList.add('has-results');
+            resultsContainer.innerHTML = '<div class="results-loading">Searching...</div>';
+
+            try {
+                const res = await fetch(
+                    `${API_BASE}/search?q=${encodeURIComponent(query)}&limit=${RESULTS_PER_PAGE}&offset=${offset}`
+                );
+                const data = await res.json();
+                totalResults = data.count;
+                renderResults(data);
+            } catch (err) {
+                resultsContainer.innerHTML = '<div class="results-loading">Could not reach search API</div>';
+            }
+        }
+
+        function buildPageRange(current, total) {
+            if (total <= 7) return Array.from({length: total}, (_, i) => i + 1);
+            const pages = [1];
+            const start = Math.max(2, current - 1);
+            const end = Math.min(total - 1, current + 1);
+            if (start > 2) pages.push('...');
+            for (let i = start; i <= end; i++) pages.push(i);
+            if (end < total - 1) pages.push('...');
+            pages.push(total);
+            return pages;
+        }
+
+        function renderResults(data) {
+            if (data.hits.length === 0) {
+                resultsContainer.innerHTML = '<div class="results-info">No results found</div>';
+                return;
+            }
+
+            const start = currentOffset + 1;
+            const end = currentOffset + data.hits.length;
+
+            let html = `<div class="results-info">Showing ${start}\u2013${end} of ${data.count} results</div>`;
+
+            data.hits.forEach(hit => {
+                const tags = hit.tags.map(t => `<span class="result-tag">${t}</span>`).join('');
+                html += `
+                    <a class="result-card" href="${hit.url}" target="_blank" rel="noopener">
+                        <div class="result-title">${hit.title || 'Untitled'}</div>
+                        <div class="result-url">${hit.url}</div>
+                        <div class="result-snippet">${hit.snippet || ''}</div>
+                        <div class="result-meta">
+                            <span class="result-sitename">${hit.sitename || ''}</span>
+                            ${tags}
+                        </div>
+                    </a>`;
+            });
+
+            // Pagination with page numbers
+            const totalPages = Math.ceil(data.count / RESULTS_PER_PAGE);
+            const currentPage = Math.floor(currentOffset / RESULTS_PER_PAGE) + 1;
+
+            if (totalPages > 1) {
+                html += '<div class="results-pagination">';
+                html += `<button ${currentPage > 1 ? '' : 'disabled'} onclick="performSearch(${(currentPage - 2) * RESULTS_PER_PAGE})">Prev</button>`;
+
+                const pages = buildPageRange(currentPage, totalPages);
+                pages.forEach(p => {
+                    if (p === '...') {
+                        html += '<span class="page-ellipsis">...</span>';
+                    } else {
+                        const active = p === currentPage ? 'active' : '';
+                        html += `<button class="page-num ${active}" onclick="performSearch(${(p - 1) * RESULTS_PER_PAGE})">${p}</button>`;
+                    }
+                });
+
+                html += `<button ${currentPage < totalPages ? '' : 'disabled'} onclick="performSearch(${currentPage * RESULTS_PER_PAGE})">Next</button>`;
+                html += '</div>';
+            }
+
+            resultsContainer.innerHTML = html;
+        }
+
+        searchBtn.addEventListener('click', () => performSearch(0));
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') performSearch(0);
+        });
+
+        // Load last crawl date into footer
+        (async function loadFooterStats() {
+            try {
+                const res = await fetch(`${API_BASE}/admin/stats`);
+                const stats = await res.json();
+                const footer = document.getElementById('footer');
+                if (stats.last_crawl) {
+                    footer.innerHTML = `Last updated <span>${stats.last_crawl}</span>`;
+                }
+            } catch (err) {}
+        })();
+
+        // Init
+        // Create city layers first (background)
+        cityLayers.push(createCityLayer(2, 0, 0.8)); // Far city
+        cityLayers.push(createCityLayer(5, 20, 1.0)); // Near city
+        
+        createStars();
+        createTreeLayers();
+        createFireflies();
+        animateParallax();
+    </script>
+</body>
+</html>

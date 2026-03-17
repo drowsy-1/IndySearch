@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Opt Out - IndySearch</title>
+    <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Special+Elite&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            font-family: 'Special Elite', monospace;
+            background: linear-gradient(180deg,
+                #0a0f18 0%,
+                #1a2535 40%,
+                #152020 70%,
+                #0a1810 100%
+            );
+            color: #b8d4be;
+        }
+
+        .page {
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 60px 24px 80px;
+        }
+
+        .back-link {
+            display: inline-block;
+            color: #7ab892;
+            text-decoration: none;
+            font-size: 0.95rem;
+            margin-bottom: 30px;
+            transition: color 0.2s;
+        }
+
+        .back-link:hover {
+            color: #f4d03f;
+        }
+
+        h1 {
+            font-family: 'Creepster', cursive;
+            font-size: 2.5rem;
+            color: #f4d03f;
+            text-shadow: 0 0 10px rgba(244, 208, 63, 0.5);
+            margin-bottom: 30px;
+            letter-spacing: 3px;
+        }
+
+        h2 {
+            font-size: 1.3rem;
+            color: #f4d03f;
+            margin-top: 35px;
+            margin-bottom: 12px;
+        }
+
+        p {
+            line-height: 1.8;
+            margin-bottom: 16px;
+            font-size: 0.95rem;
+        }
+
+        a {
+            color: #f4d03f;
+        }
+
+        .code-block {
+            position: relative;
+            background: rgba(10, 15, 10, 0.9);
+            border: 2px solid #2a4035;
+            border-radius: 6px;
+            padding: 20px 24px;
+            margin: 20px 0;
+            font-family: monospace;
+            font-size: 0.95rem;
+            color: #7ab892;
+            line-height: 1.6;
+            white-space: pre;
+            overflow-x: auto;
+        }
+
+        .copy-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-family: 'Special Elite', monospace;
+            font-size: 0.8rem;
+            color: #b8d4be;
+            background: rgba(26, 47, 35, 0.9);
+            border: 2px solid #3d5a4a;
+            border-radius: 4px;
+            padding: 6px 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .copy-btn:hover {
+            border-color: #f4d03f;
+            color: #f4d03f;
+        }
+
+        .note-box {
+            background: rgba(244, 208, 63, 0.08);
+            border: 2px solid rgba(244, 208, 63, 0.25);
+            border-radius: 6px;
+            padding: 16px 20px;
+            margin: 20px 0;
+            font-size: 0.9rem;
+            line-height: 1.7;
+        }
+
+        .note-box strong {
+            color: #f4d03f;
+        }
+
+        .steps {
+            list-style: none;
+            padding: 0;
+            counter-reset: step;
+        }
+
+        .steps li {
+            padding: 10px 0;
+            font-size: 0.95rem;
+            line-height: 1.7;
+            counter-increment: step;
+        }
+
+        .steps li::before {
+            content: counter(step) '.';
+            color: #f4d03f;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <a href="index.html" class="back-link">&larr; Back to search</a>
+
+        <h1>OPT OUT</h1>
+
+        <p>
+            IndySearch respects your right to control whether your site appears in search results.
+            If you'd prefer your Neocities site not be indexed, you can opt out using a standard
+            <strong>robots.txt</strong> file.
+        </p>
+
+        <h2>How to opt out</h2>
+
+        <ol class="steps">
+            <li>In your Neocities site dashboard, create a file called <strong>robots.txt</strong> in the root of your site.</li>
+            <li>Paste the following content into the file and save:</li>
+        </ol>
+
+        <div class="code-block" id="robotsCode">User-agent: IndySearch
+Disallow: /<button class="copy-btn" onclick="copyCode()">Copy</button></div>
+
+        <p>
+            This tells the IndySearch crawler to skip your entire site. The crawler identifies itself
+            with the user-agent string <strong>IndySearch/1.0</strong> and will respect this directive.
+        </p>
+
+        <h2>Block specific pages</h2>
+
+        <p>
+            If you only want to block certain pages rather than your whole site, you can be more specific:
+        </p>
+
+        <div class="code-block" id="robotsPartial">User-agent: IndySearch
+Disallow: /private/
+Disallow: /drafts/
+Disallow: /secret-page.html<button class="copy-btn" onclick="copyPartial()">Copy</button></div>
+
+        <div class="note-box">
+            <strong>Please note:</strong> Changes to your robots.txt will not take effect immediately.
+            IndySearch re-crawls sites periodically, and your robots.txt will be checked on the next
+            crawl cycle. It may take some time before your site is removed from search results.
+            If you need your site removed urgently, please reach out via Neocities.
+        </div>
+
+        <h2>Opting back in</h2>
+
+        <p>
+            If you change your mind, simply remove the IndySearch rules from your robots.txt
+            (or delete the file entirely). Your site will be picked up again on the next crawl cycle.
+        </p>
+    </div>
+
+    <script>
+        function copyCode() {
+            navigator.clipboard.writeText('User-agent: IndySearch\nDisallow: /');
+            showCopied(document.querySelector('#robotsCode .copy-btn'));
+        }
+
+        function copyPartial() {
+            navigator.clipboard.writeText('User-agent: IndySearch\nDisallow: /private/\nDisallow: /drafts/\nDisallow: /secret-page.html');
+            showCopied(document.querySelector('#robotsPartial .copy-btn'));
+        }
+
+        function showCopied(btn) {
+            const original = btn.textContent;
+            btn.textContent = 'Copied!';
+            btn.style.borderColor = '#f4d03f';
+            btn.style.color = '#f4d03f';
+            setTimeout(() => {
+                btn.textContent = original;
+                btn.style.borderColor = '';
+                btn.style.color = '';
+            }, 2000);
+        }
+    </script>
+</body>
+</html>
