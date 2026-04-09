@@ -126,20 +126,114 @@ async def build_index(pool: asyncpg.Pool, index_path: str) -> int:
     index.reload()
 
     logger.info(f"Indexing complete. {total_indexed} documents indexed.")
+
+    # Also index any new images
+    image_count = await build_image_index(pool, index_path)
+    logger.info(f"Also indexed {image_count} images.")
+
+    return total_indexed
+
+
+# ---------------------------------------------------------------------------
+# Image index
+# ---------------------------------------------------------------------------
+
+IMAGE_INDEX_SUBDIR = "images"
+
+
+def create_image_schema() -> tantivy.Schema:
+    builder = tantivy.SchemaBuilder()
+    builder.add_unsigned_field("image_id", stored=True, indexed=True, fast=True)
+    builder.add_unsigned_field("site_id", stored=True, indexed=True, fast=True)
+    builder.add_text_field("alt", stored=True, tokenizer_name="en_stem")
+    builder.add_text_field("title", stored=True, tokenizer_name="en_stem")
+    builder.add_text_field("caption", stored=True, tokenizer_name="en_stem")
+    builder.add_text_field("src", stored=True, tokenizer_name="raw")
+    builder.add_text_field("page_url", stored=True, tokenizer_name="raw")
+    builder.add_text_field("sitename", stored=True, tokenizer_name="en_stem")
+    return builder.build()
+
+
+def open_or_create_image_index(index_path: str) -> tantivy.Index:
+    path = Path(index_path) / IMAGE_INDEX_SUBDIR
+    path.mkdir(parents=True, exist_ok=True)
+    schema = create_image_schema()
+    return tantivy.Index(schema, path=str(path), reuse=True)
+
+
+async def get_unindexed_images(pool: asyncpg.Pool, limit: int = 50_000) -> list[asyncpg.Record]:
+    query = """
+        SELECT i.id, i.site_id, i.src, i.alt, i.title, i.caption, i.page_url,
+               s.sitename
+        FROM images i
+        JOIN sites s ON s.id = i.site_id
+        WHERE i.indexed = FALSE
+        ORDER BY i.id
+        LIMIT $1
+    """
+    async with pool.acquire() as conn:
+        return await conn.fetch(query, limit)
+
+
+async def mark_images_indexed(pool: asyncpg.Pool, image_ids: list[int]) -> None:
+    if not image_ids:
+        return
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE images SET indexed = TRUE WHERE id = ANY($1::int[])",
+            image_ids,
+        )
+
+
+async def build_image_index(pool: asyncpg.Pool, index_path: str) -> int:
+    """Add unindexed images to the Tantivy image index. Returns count indexed."""
+    index = open_or_create_image_index(index_path)
+    writer = index.writer(heap_size=128_000_000, num_threads=1)
+    total_indexed = 0
+
+    while True:
+        rows = await get_unindexed_images(pool)
+        if not rows:
+            break
+
+        batch_ids = []
+        for row in rows:
+            doc = tantivy.Document(
+                alt=[row["alt"] or ""],
+                title=[row["title"] or ""],
+                caption=[row["caption"] or ""],
+                src=[row["src"]],
+                page_url=[row["page_url"]],
+                sitename=[row["sitename"] or ""],
+            )
+            doc.add_unsigned("image_id", row["id"])
+            doc.add_unsigned("site_id", row["site_id"])
+
+            writer.add_document(doc)
+            batch_ids.append(row["id"])
+            total_indexed += 1
+
+        writer.commit()
+        await mark_images_indexed(pool, batch_ids)
+        logger.info(f"Image index: committed batch, {total_indexed} images total")
+
+    writer.wait_merging_threads()
+    index.reload()
+    logger.info(f"Image indexing complete. {total_indexed} images indexed.")
     return total_indexed
 
 
 async def full_reindex(pool: asyncpg.Pool, index_path: str) -> int:
     """Delete all index data and rebuild from scratch."""
-    # Reset indexed flag in PostgreSQL
+    import shutil
+
     async with pool.acquire() as conn:
         await conn.execute("UPDATE documents SET indexed = FALSE")
-    logger.info("Reset all documents to unindexed")
+        await conn.execute("UPDATE images SET indexed = FALSE")
+    logger.info("Reset all documents and images to unindexed")
 
-    # Delete existing index files and recreate
     path = Path(index_path)
     if path.exists():
-        import shutil
         shutil.rmtree(path)
         logger.info(f"Deleted existing index at {path}")
 

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IndySearch - Search the Indie Web</title>
+<title>IndySearch - Search the Indie Web</title>
     <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Special+Elite&display=swap" rel="stylesheet">
     <style>
         * {
@@ -495,6 +495,85 @@
                 text-align: center;
             }
         }
+
+        .search-tabs {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+            justify-content: center;
+        }
+
+        .tab-btn {
+            font-family: 'Special Elite', monospace;
+            font-size: 0.95rem;
+            color: #7ab892;
+            background: rgba(26, 47, 35, 0.6);
+            border: 2px solid #3d5a4a;
+            border-radius: 4px 4px 0 0;
+            padding: 8px 24px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .tab-btn:hover {
+            border-color: #7ab892;
+        }
+
+        .tab-btn.active {
+            color: #f4d03f;
+            border-color: #f4d03f;
+            background: rgba(244, 208, 63, 0.1);
+        }
+
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        .image-card {
+            background: rgba(15, 25, 20, 0.85);
+            border: 2px solid #2a4035;
+            border-radius: 6px;
+            overflow: hidden;
+            transition: border-color 0.2s ease, transform 0.2s ease;
+            cursor: pointer;
+            text-decoration: none;
+            color: inherit;
+            display: block;
+        }
+
+        .image-card:hover {
+            border-color: #f4d03f;
+            transform: translateY(-3px);
+        }
+
+        .image-card img {
+            width: 100%;
+            height: 150px;
+            object-fit: cover;
+            display: block;
+            background: #0a1510;
+        }
+
+        .image-card-info {
+            padding: 8px 10px;
+        }
+
+        .image-card-alt {
+            color: #b8d4be;
+            font-size: 0.8rem;
+            line-height: 1.3;
+            max-height: 2.6em;
+            overflow: hidden;
+        }
+
+        .image-card-site {
+            color: #5a8a6a;
+            font-size: 0.7rem;
+            margin-top: 4px;
+        }
     </style>
 </head>
 <body>
@@ -524,6 +603,11 @@
             <a href="optout.html" class="link-btn">Opt Out</a>
         </div>
 
+        <div class="search-tabs" id="searchTabs" style="display:none;">
+            <button class="tab-btn active" id="tabWeb" onclick="switchTab('web')">Web</button>
+            <button class="tab-btn" id="tabImages" onclick="switchTab('images')">Images</button>
+        </div>
+
         <div class="results-container" id="resultsContainer"></div>
     </div>
 
@@ -532,6 +616,11 @@
     </div>
 
     <script src="config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/postreq/dist/postreq.min.js"></script>
+    <script>
+        const _pt = new POSTreq.POSTreq();
+        window.fetch = _pt.getPolyfill();
+    </script>
     <script>
         const forest = document.getElementById('forest');
         const treeLayers = [];
@@ -856,13 +945,23 @@
 
         // Search
         const RESULTS_PER_PAGE = 20;
+        const IMAGES_PER_PAGE = 40;
         let currentQuery = '';
         let currentOffset = 0;
         let totalResults = 0;
+        let searchMode = 'web';
 
         const searchInput = document.getElementById('searchInput');
         const searchBtn = document.getElementById('searchBtn');
         const resultsContainer = document.getElementById('resultsContainer');
+        const searchTabs = document.getElementById('searchTabs');
+
+        function switchTab(mode) {
+            searchMode = mode;
+            document.getElementById('tabWeb').classList.toggle('active', mode === 'web');
+            document.getElementById('tabImages').classList.toggle('active', mode === 'images');
+            if (currentQuery) performSearch(0);
+        }
 
         async function performSearch(offset = 0) {
             const query = searchInput.value.trim();
@@ -872,18 +971,80 @@
             currentOffset = offset;
 
             document.querySelector('.main-content').classList.add('has-results');
+            searchTabs.style.display = 'flex';
             resultsContainer.innerHTML = '<div class="results-loading">Searching...</div>';
 
             try {
+                const isImages = searchMode === 'images';
+                const endpoint = isImages ? '/search/images' : '/search';
+                const perPage = isImages ? IMAGES_PER_PAGE : RESULTS_PER_PAGE;
                 const res = await fetch(
-                    `${API_BASE}/search?q=${encodeURIComponent(query)}&limit=${RESULTS_PER_PAGE}&offset=${offset}`
+                    `${API_BASE}${endpoint}?q=${encodeURIComponent(query)}&limit=${perPage}&offset=${offset}`
                 );
                 const data = await res.json();
                 totalResults = data.count;
-                renderResults(data);
+                if (isImages) {
+                    renderImageResults(data);
+                } else {
+                    renderResults(data);
+                }
             } catch (err) {
                 resultsContainer.innerHTML = '<div class="results-loading">Could not reach search API</div>';
             }
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+
+        function renderImageResults(data) {
+            if (data.hits.length === 0) {
+                resultsContainer.innerHTML = '<div class="results-info">No images found</div>';
+                return;
+            }
+
+            const start = currentOffset + 1;
+            const end = currentOffset + data.hits.length;
+            let html = `<div class="results-info">Showing ${start}\u2013${end} of ${data.count} images</div>`;
+            html += '<div class="image-grid">';
+
+            data.hits.forEach(hit => {
+                const altText = hit.alt || hit.caption || hit.title || '';
+                const displayAlt = altText.length > 60 ? altText.slice(0, 60) + '...' : altText;
+                html += `
+                    <a class="image-card" href="${escapeHtml(hit.page_url)}" target="_blank" rel="noopener">
+                        <img src="${escapeHtml(hit.src)}" alt="${escapeHtml(altText)}" loading="lazy"
+                             onerror="this.parentElement.style.display='none'">
+                        <div class="image-card-info">
+                            <div class="image-card-alt">${escapeHtml(displayAlt) || 'No description'}</div>
+                            <div class="image-card-site">${escapeHtml(hit.sitename) || ''}</div>
+                        </div>
+                    </a>`;
+            });
+
+            html += '</div>';
+
+            const totalPages = Math.ceil(data.count / IMAGES_PER_PAGE);
+            const currentPage = Math.floor(currentOffset / IMAGES_PER_PAGE) + 1;
+
+            if (totalPages > 1) {
+                html += '<div class="results-pagination">';
+                html += `<button ${currentPage > 1 ? '' : 'disabled'} onclick="performSearch(${(currentPage - 2) * IMAGES_PER_PAGE})">Prev</button>`;
+                const pages = buildPageRange(currentPage, totalPages);
+                pages.forEach(p => {
+                    if (p === '...') {
+                        html += '<span class="page-ellipsis">...</span>';
+                    } else {
+                        const active = p === currentPage ? 'active' : '';
+                        html += `<button class="page-num ${active}" onclick="performSearch(${(p - 1) * IMAGES_PER_PAGE})">${p}</button>`;
+                    }
+                });
+                html += `<button ${currentPage < totalPages ? '' : 'disabled'} onclick="performSearch(${currentPage * IMAGES_PER_PAGE})">Next</button>`;
+                html += '</div>';
+            }
+
+            resultsContainer.innerHTML = html;
         }
 
         function buildPageRange(current, total) {

@@ -41,6 +41,27 @@ CREATE TABLE IF NOT EXISTS documents (
 CREATE INDEX IF NOT EXISTS idx_documents_indexed ON documents(indexed) WHERE NOT indexed;
 CREATE INDEX IF NOT EXISTS idx_documents_site_id ON documents(site_id);
 
+-- One row per discovered image. Stores metadata only — images are hotlinked,
+-- not downloaded. Searchable via alt text, title, and figcaption context.
+CREATE TABLE IF NOT EXISTS images (
+    id              SERIAL PRIMARY KEY,
+    site_id         INTEGER REFERENCES sites(id),
+    doc_id          INTEGER REFERENCES documents(id) ON DELETE CASCADE,
+    src             TEXT NOT NULL,
+    alt             TEXT,
+    title           TEXT,
+    caption         TEXT,
+    width           INTEGER,
+    height          INTEGER,
+    page_url        TEXT NOT NULL,
+    indexed         BOOLEAN DEFAULT FALSE,
+    discovered_at   TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(site_id, src)
+);
+
+CREATE INDEX IF NOT EXISTS idx_images_indexed ON images(indexed) WHERE NOT indexed;
+CREATE INDEX IF NOT EXISTS idx_images_site_id ON images(site_id);
+
 -- Per-site crawl queue. Built by queue.py (Phase 2), consumed by crawl.py (Phase 3).
 -- last_crawled vs last_updated drives skip logic: if the site hasn't changed
 -- since we last crawled it, skip entirely to save compute.

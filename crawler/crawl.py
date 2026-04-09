@@ -162,6 +162,75 @@ def extract_text(html: str, url: str) -> dict | None:
 
 
 # ---------------------------------------------------------------------------
+# Image extraction
+# ---------------------------------------------------------------------------
+
+MIN_IMAGE_DIMENSION = 64  # pixels — filter out icons/spacers
+
+
+def _parse_int_attr(val) -> int | None:
+    if val is None:
+        return None
+    try:
+        return int(str(val).replace("px", "").strip())
+    except (ValueError, TypeError):
+        return None
+
+
+def extract_images(html: str, page_url: str) -> list[dict]:
+    """Extract image metadata from HTML, filtering out tiny/icon images."""
+    soup = BeautifulSoup(html, "html.parser")
+    images = []
+    seen_srcs = set()
+
+    for img in soup.find_all("img", src=True):
+        src = img["src"].strip()
+        if not src or src.startswith("data:"):
+            continue
+
+        abs_src = urllib.parse.urljoin(page_url, src)
+
+        if abs_src in seen_srcs:
+            continue
+        seen_srcs.add(abs_src)
+
+        # Skip SVGs and ICOs
+        path_lower = urllib.parse.urlparse(abs_src).path.lower()
+        if path_lower.endswith((".svg", ".ico")):
+            continue
+
+        width = _parse_int_attr(img.get("width"))
+        height = _parse_int_attr(img.get("height"))
+
+        if width is not None and width < MIN_IMAGE_DIMENSION:
+            continue
+        if height is not None and height < MIN_IMAGE_DIMENSION:
+            continue
+
+        alt = (img.get("alt") or "").strip() or None
+        title = (img.get("title") or "").strip() or None
+
+        caption = None
+        figure = img.find_parent("figure")
+        if figure:
+            figcaption = figure.find("figcaption")
+            if figcaption:
+                caption = figcaption.get_text(strip=True) or None
+
+        images.append({
+            "src": abs_src,
+            "alt": alt,
+            "title": title,
+            "caption": caption,
+            "width": width,
+            "height": height,
+            "page_url": page_url,
+        })
+
+    return images
+
+
+# ---------------------------------------------------------------------------
 # Per-site crawl
 # ---------------------------------------------------------------------------
 
@@ -243,8 +312,14 @@ async def crawl_site(
             "storage_key": storage_key,
         })
 
+        # Extract and store image metadata
+        images = extract_images(html, url)
+        if images:
+            doc_id = await db.get_document_id(pool, site_id, path)
+            await db.upsert_images(pool, site_id, doc_id, images)
+
         pages_processed += 1
-        logger.debug(f"[{sitename}] {pages_processed}/{max_pages} — {url} ({extracted['word_count']} words)")
+        logger.debug(f"[{sitename}] {pages_processed}/{max_pages} — {url} ({extracted['word_count']} words, {len(images)} images)")
 
         await asyncio.sleep(crawl_delay)
 

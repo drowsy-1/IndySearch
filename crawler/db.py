@@ -241,6 +241,46 @@ async def upsert_document(pool: asyncpg.Pool, doc: dict) -> None:
         )
 
 
+async def get_document_id(pool: asyncpg.Pool, site_id: int, path: str) -> int | None:
+    """Get the document ID for a site_id + path combo."""
+    async with pool.acquire() as conn:
+        return await conn.fetchval(
+            "SELECT id FROM documents WHERE site_id = $1 AND path = $2",
+            site_id, path,
+        )
+
+
+async def upsert_images(pool: asyncpg.Pool, site_id: int, doc_id: int | None, images: list[dict]) -> int:
+    """Bulk insert image metadata. Returns count inserted."""
+    if not images:
+        return 0
+    query = """
+        INSERT INTO images (site_id, doc_id, src, alt, title, caption, width, height, page_url)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT (site_id, src) DO UPDATE SET
+            alt = EXCLUDED.alt,
+            title = EXCLUDED.title,
+            caption = EXCLUDED.caption,
+            width = EXCLUDED.width,
+            height = EXCLUDED.height,
+            page_url = EXCLUDED.page_url,
+            doc_id = EXCLUDED.doc_id,
+            indexed = FALSE
+    """
+    count = 0
+    async with pool.acquire() as conn:
+        for img in images:
+            await conn.execute(
+                query,
+                site_id, doc_id,
+                img["src"], img.get("alt"), img.get("title"),
+                img.get("caption"), img.get("width"), img.get("height"),
+                img["page_url"],
+            )
+            count += 1
+    return count
+
+
 async def get_crawl_stats(pool: asyncpg.Pool) -> dict:
     """Return crawl progress counts."""
     async with pool.acquire() as conn:

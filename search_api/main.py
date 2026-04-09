@@ -37,6 +37,15 @@ async def lifespan(app: FastAPI):
         app.state.index.reload()
         logger.info(f"Search index loaded from {INDEX_DIR}")
 
+    image_index_path = index_path / indexer.IMAGE_INDEX_SUBDIR
+    image_meta = image_index_path / "meta.json"
+    if image_meta.exists():
+        app.state.image_index = tantivy.Index.open(str(image_index_path))
+        app.state.image_index.reload()
+        logger.info("Image search index loaded")
+    else:
+        app.state.image_index = None
+
     database_url = os.environ.get("DATABASE_URL")
     if database_url:
         app.state.pool = await asyncpg.create_pool(database_url, min_size=1, max_size=5)
@@ -104,10 +113,28 @@ class CrawlSnapshot(BaseModel):
     total_documents: int
 
 
+class ImageHit(BaseModel):
+    score: float
+    image_id: int | None = None
+    src: str
+    alt: str | None = None
+    title: str | None = None
+    caption: str | None = None
+    page_url: str
+    sitename: str | None = None
+
+
+class ImageSearchResponse(BaseModel):
+    count: int
+    query: str
+    hits: list[ImageHit]
+
+
 class StatsResponse(BaseModel):
     index_loaded: bool
     index_dir: str
     num_docs: int | None = None
+    num_images: int | None = None
     last_crawl: str | None = None
     crawl_history: list[CrawlSnapshot] = []
 
@@ -159,6 +186,42 @@ def search(
     return SearchResponse(count=search_result.count, query=q, hits=hits)
 
 
+@app.get("/search/images", response_model=ImageSearchResponse)
+def search_images(
+    q: str = Query(..., min_length=1, max_length=200),
+    limit: int = Query(40, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    index = app.state.image_index
+    if index is None:
+        return ImageSearchResponse(count=0, query=q, hits=[])
+
+    query = index.parse_query(
+        q,
+        default_field_names=["alt", "title", "caption", "sitename"],
+        field_boosts={"alt": 2.0, "caption": 2.0, "title": 1.5, "sitename": 1.0},
+    )
+
+    searcher = index.searcher()
+    search_result = searcher.search(query, limit=limit, count=True, offset=offset)
+
+    hits = []
+    for score, doc_address in search_result.hits:
+        doc = searcher.doc(doc_address)
+        hits.append(ImageHit(
+            score=round(score, 4),
+            image_id=doc.get_first("image_id"),
+            src=doc.get_first("src") or "",
+            alt=doc.get_first("alt"),
+            title=doc.get_first("title"),
+            caption=doc.get_first("caption"),
+            page_url=doc.get_first("page_url") or "",
+            sitename=doc.get_first("sitename"),
+        ))
+
+    return ImageSearchResponse(count=search_result.count, query=q, hits=hits)
+
+
 @app.post("/admin/reindex", response_model=ReindexResponse)
 async def admin_reindex():
     pool = app.state.pool
@@ -167,11 +230,16 @@ async def admin_reindex():
 
     count = await indexer.build_index(pool, INDEX_DIR)
 
-    # Reload index so new searchers see the updated documents
+    # Reload indexes so new searchers see the updated documents
     index_path = Path(INDEX_DIR)
     if index_path.exists() and any(index_path.iterdir()):
         app.state.index = tantivy.Index.open(str(index_path))
         app.state.index.reload()
+
+    image_index_path = index_path / indexer.IMAGE_INDEX_SUBDIR
+    if image_index_path.exists() and any(image_index_path.iterdir()):
+        app.state.image_index = tantivy.Index.open(str(image_index_path))
+        app.state.image_index.reload()
 
     return ReindexResponse(status="ok", documents_indexed=count)
 
@@ -208,10 +276,16 @@ async def admin_stats():
                     ) for r in rows
                 ]
 
+    num_images = None
+    image_index = app.state.image_index
+    if image_index is not None:
+        num_images = image_index.searcher().num_docs
+
     return StatsResponse(
         index_loaded=index is not None,
         index_dir=INDEX_DIR,
         num_docs=num_docs,
+        num_images=num_images,
         last_crawl=last_crawl,
         crawl_history=crawl_history,
     )
