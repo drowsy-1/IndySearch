@@ -28,7 +28,7 @@ env/
 # Tantivy index (large binary files, built at runtime)
 data/index/
 
-# Crawled text data (stored in R2 in production)
+# Crawled text data (stored in Railway Bucket in production)
 data/texts/
 
 # OS files
@@ -43,3 +43,6 @@ Thumbs.db
 
 # Docker
 *.log
+
+tmp_delete.md
+

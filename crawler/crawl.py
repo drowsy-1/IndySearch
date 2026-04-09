@@ -227,8 +227,8 @@ async def crawl_site(
 
         # Store compressed full text
         path = url_to_path(url)
-        r2_key = storage.make_key(site_id, path)
-        storage.store_text(r2_key, extracted["body"])
+        storage_key = storage.make_key(site_id, path)
+        storage.store_text(storage_key, extracted["body"])
 
         # Save document metadata to DB
         await db.upsert_document(pool, {
@@ -240,7 +240,7 @@ async def crawl_site(
             "description": extracted["description"],
             "author": extracted["author"],
             "word_count": extracted["word_count"],
-            "r2_key": r2_key,
+            "storage_key": storage_key,
         })
 
         pages_processed += 1

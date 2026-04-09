@@ -15,23 +15,23 @@ _s3_client = None
 
 
 def _get_s3_client():
-    """Lazily create an S3-compatible client for Cloudflare R2."""
+    """Lazily create an S3-compatible client for Railway Storage Bucket."""
     global _s3_client
     if _s3_client is None:
         import boto3
 
         _s3_client = boto3.client(
             "s3",
-            endpoint_url=f"https://{os.environ['R2_ACCOUNT_ID']}.r2.cloudflarestorage.com",
-            aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
-            aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
-            region_name="auto",
+            endpoint_url=os.environ["ENDPOINT"],
+            aws_access_key_id=os.environ["ACCESS_KEY_ID"],
+            aws_secret_access_key=os.environ["SECRET_ACCESS_KEY"],
+            region_name=os.environ.get("REGION", "auto"),
         )
     return _s3_client
 
 
-def _use_r2() -> bool:
-    return bool(os.environ.get("R2_BUCKET_NAME"))
+def _use_bucket() -> bool:
+    return bool(os.environ.get("BUCKET"))
 
 
 def _get_storage_dir() -> Path:
@@ -50,10 +50,10 @@ def store_text(key: str, text: str) -> str:
     """Compress text with zstd and store. Returns the key."""
     compressed = _compressor.compress(text.encode("utf-8"))
 
-    if _use_r2():
-        bucket = os.environ["R2_BUCKET_NAME"]
+    if _use_bucket():
+        bucket = os.environ["BUCKET"]
         _get_s3_client().put_object(Bucket=bucket, Key=key, Body=compressed)
-        logger.debug(f"Stored {len(text)} chars → {len(compressed)} bytes at r2://{bucket}/{key}")
+        logger.debug(f"Stored {len(text)} chars → {len(compressed)} bytes at s3://{bucket}/{key}")
     else:
         storage_dir = _get_storage_dir()
         file_path = storage_dir / key
@@ -66,8 +66,8 @@ def store_text(key: str, text: str) -> str:
 
 def load_text(key: str) -> str:
     """Read and decompress text from storage."""
-    if _use_r2():
-        bucket = os.environ["R2_BUCKET_NAME"]
+    if _use_bucket():
+        bucket = os.environ["BUCKET"]
         response = _get_s3_client().get_object(Bucket=bucket, Key=key)
         compressed = response["Body"].read()
     else:

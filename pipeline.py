@@ -67,8 +67,25 @@ async def phase_crawl(pool, max_sites=None, max_pages_per_site=50, crawl_delay=1
     await crawl.run_crawl(pool, args)
 
 
-async def phase_index(pool, full_reindex=False):
-    """Phase 4: build the Tantivy search index."""
+async def phase_index(pool, full_reindex=False, api_url=None):
+    """Phase 4: build the Tantivy search index.
+
+    If api_url is set, triggers indexing on the remote API service instead of
+    building locally.  This is the normal path on Railway where the crawler and
+    API have separate volumes.
+    """
+    if api_url:
+        import httpx
+
+        url = f"{api_url.rstrip('/')}/admin/reindex"
+        logger.info(f"=== Phase 4: Triggering remote reindex at {url} ===")
+        async with httpx.AsyncClient(timeout=600) as client:
+            resp = await client.post(url)
+            resp.raise_for_status()
+            data = resp.json()
+        logger.info(f"Remote reindex complete: {data.get('documents_indexed', '?')} documents")
+        return
+
     from search_api import indexer
 
     index_dir = os.environ.get("INDEX_DIR", "./data/index")
@@ -113,7 +130,7 @@ async def run_pipeline(args):
                 return
 
         if phases in ("all", "index"):
-            await phase_index(pool, full_reindex=args.full_reindex)
+            await phase_index(pool, full_reindex=args.full_reindex, api_url=args.api_url)
 
         logger.info("=== Pipeline complete ===")
 
@@ -133,6 +150,8 @@ def parse_args():
     parser.add_argument("--max-pages-per-site", type=int, default=50, help="Max pages per site (default: 50)")
     parser.add_argument("--crawl-delay", type=float, default=1.5, help="Seconds between crawl requests (default: 1.5)")
     parser.add_argument("--full-reindex", action="store_true", help="Force full index rebuild instead of incremental")
+    parser.add_argument("--api-url", default=os.environ.get("API_URL"),
+                        help="API service URL to trigger remote reindex (default: API_URL env var)")
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     return parser.parse_args()
 

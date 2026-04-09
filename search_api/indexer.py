@@ -40,7 +40,7 @@ def open_or_create_index(index_path: str) -> tantivy.Index:
 
 async def get_unindexed_documents(pool: asyncpg.Pool, limit: int = 50_000) -> list[asyncpg.Record]:
     query = """
-        SELECT d.id, d.site_id, d.url, d.title, d.word_count, d.r2_key,
+        SELECT d.id, d.site_id, d.url, d.title, d.word_count, d.storage_key,
                s.sitename, s.tags, s.hits, s.last_updated
         FROM documents d
         JOIN sites s ON s.id = d.site_id
@@ -77,16 +77,16 @@ async def build_index(pool: asyncpg.Pool, index_path: str) -> int:
 
         batch_ids = []
         for row in docs:
-            r2_key = row["r2_key"]
-            if not r2_key:
-                logger.warning(f"Document {row['id']} has no r2_key, skipping")
+            storage_key = row["storage_key"]
+            if not storage_key:
+                logger.warning(f"Document {row['id']} has no storage_key, skipping index")
                 batch_ids.append(row["id"])
                 continue
 
             try:
-                body = storage.load_text(r2_key)
+                body = storage.load_text(storage_key)
             except FileNotFoundError:
-                logger.warning(f"Text not found for doc {row['id']} at {r2_key}, skipping")
+                logger.warning(f"Text not found for doc {row['id']} at {storage_key}, skipping")
                 batch_ids.append(row["id"])
                 continue
 

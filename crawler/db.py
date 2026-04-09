@@ -213,7 +213,7 @@ async def mark_site_blocked(pool: asyncpg.Pool, site_id: int) -> None:
 async def upsert_document(pool: asyncpg.Pool, doc: dict) -> None:
     """Insert or update a document row."""
     query = """
-        INSERT INTO documents (site_id, url, path, title, body_snippet, description, author, word_count, r2_key)
+        INSERT INTO documents (site_id, url, path, title, body_snippet, description, author, word_count, storage_key)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         ON CONFLICT (site_id, path) DO UPDATE SET
             url = EXCLUDED.url,
@@ -222,7 +222,7 @@ async def upsert_document(pool: asyncpg.Pool, doc: dict) -> None:
             description = EXCLUDED.description,
             author = EXCLUDED.author,
             word_count = EXCLUDED.word_count,
-            r2_key = EXCLUDED.r2_key,
+            storage_key = EXCLUDED.storage_key,
             extracted_at = NOW(),
             indexed = FALSE
     """
@@ -237,7 +237,7 @@ async def upsert_document(pool: asyncpg.Pool, doc: dict) -> None:
             doc.get("description"),
             doc.get("author"),
             doc.get("word_count", 0),
-            doc.get("r2_key"),
+            doc.get("storage_key"),
         )
 
 

@@ -23,8 +23,8 @@ IndySearch has four components, all deployed from **one single Git repository**:
                        │                    │
                        ▼                    ▼
                   ┌─────────┐        ┌───────────┐
-                  │ Railway │        │Cloudflare  │
-                  │PostgreSQL│       │    R2      │
+                  │ Railway │        │  Railway   │
+                  │PostgreSQL│       │  Bucket    │
                   └─────────┘        └───────────┘
 ```
 
@@ -36,7 +36,7 @@ IndySearch has four components, all deployed from **one single Git repository**:
 | **Crawler** | Railway (monthly cron) | Auto-deploys on `git push` | `Dockerfile.crawler` |
 | **PostgreSQL** | Railway (managed) | Created via Railway dashboard | N/A (Railway manages it) |
 | **Frontend** | Neocities | GitHub Actions on push to `frontend/` | N/A (static files) |
-| **Text Storage** | Cloudflare R2 | N/A (object storage bucket) | N/A |
+| **Text Storage** | Railway Bucket | Created via Railway canvas | N/A (S3-compatible) |
 
 ---
 
@@ -45,44 +45,37 @@ IndySearch has four components, all deployed from **one single Git repository**:
 Before starting, you need accounts on:
 
 1. **GitHub** — to host the repo (free)
-2. **Railway** — to run the API, crawler, and database ($5 Pro plan, includes $5 credit)
-3. **Cloudflare** — for R2 object storage (free tier covers this project)
-4. **Neocities** — to host the frontend (free tier)
+2. **Railway** — to run the API, crawler, database, and storage bucket ($5 Pro plan, includes $5 credit)
+3. **Neocities** — to host the frontend (free tier)
 
 ---
 
-## Step 1: Cloudflare R2 Setup
+## Step 1: Railway Storage Bucket Setup
 
-R2 stores the compressed extracted text from crawled pages. The crawler writes to it, and the indexer reads from it during index builds. R2 is S3-compatible with zero egress fees.
+A Railway Storage Bucket stores the compressed extracted text from crawled pages. The crawler writes to it, and the indexer reads from it during index builds. Railway Buckets are S3-compatible with free egress and $0.015/GB-month storage.
 
-> **Can you skip R2?** Yes — if `R2_BUCKET_NAME` is not set, the crawler falls back to local file storage (`STORAGE_DIR`). But this means text files live on the Railway container's ephemeral filesystem and will be lost on redeploy. R2 is strongly recommended for production.
+> **Can you skip the bucket?** Yes — if `BUCKET` is not set, the crawler falls back to local file storage (`STORAGE_DIR`). But this means text files live on the Railway container's ephemeral filesystem and will be lost on redeploy. A bucket is strongly recommended for production.
 
 ### Create the bucket
 
-1. Log into the [Cloudflare dashboard](https://dash.cloudflare.com)
-2. In the left sidebar, click **R2 Object Storage**
-3. Click **Create bucket**
-4. Name it `indysearch-texts` (or whatever you prefer — just match it in your env vars later)
-5. Choose **Automatic** for the location hint
-6. Click **Create bucket**
+1. In your Railway project canvas, click **Create** → **Bucket**
+2. Choose a region (this cannot be changed later)
+3. Optionally rename the bucket (e.g., `neosearch-texts`)
+4. Railway auto-generates a globally unique bucket name (your display name + a short hash)
 
-### Create an API token
+### Wire credentials to services
 
-1. Still in R2, click **Manage R2 API Tokens** (top right)
-2. Click **Create API Token**
-3. Give it a name like `indysearch-crawler`
-4. Permissions: **Object Read & Write**
-5. Scope: apply to the `indysearch-texts` bucket only (or all buckets)
-6. Click **Create API Token**
-7. **Save these three values** — you will need them as environment variables:
+Railway provides these variables on the bucket:
 
-| What Cloudflare shows | Env variable it maps to |
-|----------------------|------------------------|
-| Account ID (shown at top of R2 page) | `R2_ACCOUNT_ID` |
-| Access Key ID | `R2_ACCESS_KEY_ID` |
-| Secret Access Key | `R2_SECRET_ACCESS_KEY` |
+| Variable | Description |
+|----------|-------------|
+| `BUCKET` | Globally unique S3 bucket name |
+| `ENDPOINT` | S3 API endpoint (`https://storage.railway.app`) |
+| `ACCESS_KEY_ID` | S3 authentication key |
+| `SECRET_ACCESS_KEY` | S3 secret credential |
+| `REGION` | Bucket region |
 
-The `R2_ACCOUNT_ID` is also visible in your Cloudflare dashboard URL: `https://dash.cloudflare.com/<THIS-IS-YOUR-ACCOUNT-ID>/r2`
+You can inject these into the crawler service using **Shared Variables** or by referencing them as `${{Bucket.BUCKET}}`, `${{Bucket.ENDPOINT}}`, etc. in the crawler's Variables tab (see Step 2c)
 
 ---
 
@@ -121,6 +114,11 @@ This is the FastAPI server that handles `/search` requests from the frontend. It
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` | Click **Add Reference** → select the PostgreSQL service. Railway auto-fills the connection string. |
 | `INDEX_DIR` | `/app/data/index` | Path inside the container where the Tantivy index lives. Must match the volume mount path (see below). |
 | `PORT` | `8000` | Railway routes traffic to this port. Must match the `uvicorn` command in `Dockerfile.api`. |
+| `BUCKET` | `${{Bucket.BUCKET}}` | The API needs bucket access to read stored text during indexing. |
+| `ENDPOINT` | `${{Bucket.ENDPOINT}}` | S3 API endpoint. |
+| `ACCESS_KEY_ID` | `${{Bucket.ACCESS_KEY_ID}}` | S3 access key. |
+| `SECRET_ACCESS_KEY` | `${{Bucket.SECRET_ACCESS_KEY}}` | S3 secret key. |
+| `REGION` | `${{Bucket.REGION}}` | Bucket region. |
 
 **Volume** (Settings → Volumes → Mount Volume):
 - Click **New Volume**
@@ -130,11 +128,11 @@ This is the FastAPI server that handles `/search` requests from the frontend. It
 **Networking** (Settings → Networking):
 - Click **Generate Domain** to get a public URL
 - You'll get something like: `https://indysearch-api-production.up.railway.app`
-- **Save this URL** — you need it for the frontend `config.js`
+- **Save this URL** — you need it for the frontend `config.js` and the crawler's `API_URL`
 
 ### 2c. Deploy the Crawler service
 
-This is the pipeline that discovers sites, crawls them, extracts text, and builds the search index. It runs as a scheduled cron job.
+This is the pipeline that discovers sites, crawls them, and extracts text. After crawling, it triggers the API's `/admin/reindex` endpoint so the API builds the search index on its own volume. It runs as a scheduled cron job.
 
 1. In the same Railway project, click **New** → **GitHub Repo** → select the **same** NeoSearch repo again
 2. Railway will create a second service from the same repo. Configure it:
@@ -149,16 +147,14 @@ This is the pipeline that discovers sites, crawls them, extracts text, and build
 | Variable | Value | Notes |
 |----------|-------|-------|
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` | Same reference as the API service. |
-| `INDEX_DIR` | `/app/data/index` | Where to write the Tantivy index. Should match the API's volume mount so both services share the same index. |
-| `STORAGE_DIR` | `/app/data/texts` | Local fallback for text storage. Only used if `R2_BUCKET_NAME` is not set. |
-| `R2_BUCKET_NAME` | `indysearch-texts` | The name of the R2 bucket you created in Step 1. **If this is set, the crawler uses R2 instead of local storage.** |
-| `R2_ACCOUNT_ID` | *(from Step 1)* | Your Cloudflare account ID. |
-| `R2_ACCESS_KEY_ID` | *(from Step 1)* | The access key from the R2 API token. |
-| `R2_SECRET_ACCESS_KEY` | *(from Step 1)* | The secret key from the R2 API token. |
+| `API_URL` | `http://indysearch-api.railway.internal:8000` | Internal URL of the API service. The crawler calls `/admin/reindex` here after crawling. Use the Railway internal DNS name for your API service. |
+| `BUCKET` | `${{Bucket.BUCKET}}` | Railway Storage Bucket name. Click **Add Reference** → select the Bucket. **If set, the crawler uses the bucket instead of local storage.** |
+| `ENDPOINT` | `${{Bucket.ENDPOINT}}` | S3 API endpoint. Auto-filled via variable reference. |
+| `ACCESS_KEY_ID` | `${{Bucket.ACCESS_KEY_ID}}` | S3 access key. Auto-filled via variable reference. |
+| `SECRET_ACCESS_KEY` | `${{Bucket.SECRET_ACCESS_KEY}}` | S3 secret key. Auto-filled via variable reference. |
+| `REGION` | `${{Bucket.REGION}}` | Bucket region. Auto-filled via variable reference. |
 
-**Volume** (Settings → Volumes → Mount Volume):
-- Mount the **same volume** as the API service at `/app/data/index`
-- This ensures the crawler writes the Tantivy index to the same persistent disk that the API reads from
+> **Note:** The crawler no longer needs a volume or `INDEX_DIR`. Indexing happens on the API service.
 
 **Cron schedule** (Settings → Deploy → Cron Schedule):
 - Set to: `0 3 1 * *`
@@ -224,7 +220,7 @@ If you set the cron schedule, the crawler will run automatically at the schedule
 3. The crawler will start the full pipeline:
    - **Phase 1** — Discovers ~358K Neocities sites by scraping browse pages, then enriches each with API metadata (~2-4 hours)
    - **Phase 2** — Builds a crawl queue, skipping sites that haven't changed since last crawl (~seconds)
-   - **Phase 3** — Crawls queued sites, extracts text, stores to R2 (~many hours for full corpus)
+   - **Phase 3** — Crawls queued sites, extracts text, stores to bucket (~many hours for full corpus)
    - **Phase 4** — Builds the Tantivy search index from extracted text (~minutes)
 4. Watch progress in the Railway logs (click the service → **Logs** tab)
 
@@ -263,12 +259,13 @@ Once the crawler has finished at least one run:
 | Variable | Required | Default | Example | Description |
 |----------|----------|---------|---------|-------------|
 | `DATABASE_URL` | **Yes** | *(none)* | `postgresql://postgres:abc@host:5432/railway` | PostgreSQL connection string. The crawler reads/writes sites, documents, and queue state. **The pipeline will crash without this.** |
-| `INDEX_DIR` | No | `./data/index` | `/app/data/index` | Where to write the Tantivy index. Should be the same persistent volume the API reads from. |
-| `STORAGE_DIR` | No | `./data/texts` | `/app/data/texts` | Local directory for storing compressed text files. Only used when R2 is not configured. |
-| `R2_BUCKET_NAME` | No* | *(none)* | `indysearch-texts` | Cloudflare R2 bucket name. **If set, the crawler stores text in R2 instead of local disk.** If not set, falls back to `STORAGE_DIR`. *Recommended for production.* |
-| `R2_ACCOUNT_ID` | If using R2 | *(none)* | `a1b2c3d4e5f6...` | Your Cloudflare account ID. Found in the Cloudflare dashboard URL or the R2 overview page. |
-| `R2_ACCESS_KEY_ID` | If using R2 | *(none)* | `abc123...` | Access key from the R2 API token you created. |
-| `R2_SECRET_ACCESS_KEY` | If using R2 | *(none)* | `xyz789...` | Secret key from the R2 API token. **Keep this secret.** |
+| `API_URL` | No | *(none)* | `http://indysearch-api.railway.internal:8000` | Internal URL of the API service. If set, the crawler triggers remote reindex after crawling instead of building the index locally. **Required on Railway** where services have separate volumes. |
+| `STORAGE_DIR` | No | `./data/texts` | `/app/data/texts` | Local directory for storing compressed text files. Only used when bucket is not configured. |
+| `BUCKET` | No* | *(none)* | `neosearch-texts-abc123` | Railway Storage Bucket name. **If set, the crawler stores text in the bucket instead of local disk.** If not set, falls back to `STORAGE_DIR`. *Recommended for production.* On Railway, use `${{Bucket.BUCKET}}`. |
+| `ENDPOINT` | If using bucket | *(none)* | `https://storage.railway.app` | S3-compatible endpoint URL. On Railway, use `${{Bucket.ENDPOINT}}`. |
+| `ACCESS_KEY_ID` | If using bucket | *(none)* | `abc123...` | S3 access key for the bucket. On Railway, use `${{Bucket.ACCESS_KEY_ID}}`. |
+| `SECRET_ACCESS_KEY` | If using bucket | *(none)* | `xyz789...` | S3 secret key for the bucket. **Keep this secret.** On Railway, use `${{Bucket.SECRET_ACCESS_KEY}}`. |
+| `REGION` | No | `auto` | `us-east-1` | Bucket region. On Railway, use `${{Bucket.REGION}}`. |
 
 ### GitHub Actions (frontend deploy)
 
@@ -288,17 +285,17 @@ const API_BASE = 'http://localhost:8000';
 const API_BASE = 'https://indysearch-api-production.up.railway.app';
 ```
 
-### How the R2 fallback works
+### How the bucket fallback works
 
 The storage decision logic in `crawler/storage.py` is:
 
 ```
-Is R2_BUCKET_NAME set?
-  ├── Yes → Use R2 (reads R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY)
+Is BUCKET set?
+  ├── Yes → Use S3 bucket (reads ENDPOINT, ACCESS_KEY_ID, SECRET_ACCESS_KEY, REGION)
   └── No  → Use local filesystem (reads STORAGE_DIR, defaults to ./data/texts)
 ```
 
-For local development, you don't need R2 at all. Just leave `R2_BUCKET_NAME` unset and text files go to `./data/texts/`.
+For local development, you don't need a bucket at all. Just leave `BUCKET` unset and text files go to `./data/texts/`.
 
 ---
 
@@ -327,9 +324,7 @@ When you `git push` to your repo, **both** Railway services redeploy automatical
 
 ### What each Dockerfile includes
 
-Both Dockerfiles install **all** Python dependencies (crawler + search_api) because:
-- The crawler needs `search_api.indexer` for Phase 4 (building the Tantivy index)
-- The API needs crawler packages during admin reindex operations
+The API Dockerfile installs all dependencies (crawler + search_api) because it needs `crawler.storage` to read text from the bucket during indexing. The crawler Dockerfile only needs its own dependencies — it triggers indexing remotely via the API.
 
 ```
 Dockerfile.api:
@@ -338,8 +333,8 @@ Dockerfile.api:
   - Runs: uvicorn search_api.main:app
 
 Dockerfile.crawler:
-  - Installs: crawler/requirements.txt + search_api/requirements.txt
-  - Copies: crawler/ + search_api/ + pipeline.py
+  - Installs: crawler/requirements.txt
+  - Copies: crawler/ + pipeline.py
   - Runs: python pipeline.py
 ```
 
@@ -384,7 +379,7 @@ Both default to:
 DATABASE_URL=postgresql://neosearch:localdev@localhost:5432/neosearch
 ```
 
-No R2 variables are set, so text storage falls back to `./data/texts/`.
+No bucket variables are set, so text storage falls back to `./data/texts/`.
 
 ### 3. Install dependencies
 
@@ -421,9 +416,9 @@ The API logs `No index found at /app/data/index` if the Tantivy index doesn't ex
 
 `DATABASE_URL` is required for the crawler — it reads from `os.environ["DATABASE_URL"]` directly (not optional). Make sure the variable is set. On Railway, use `${{Postgres.DATABASE_URL}}` as the value so it auto-resolves.
 
-### Crawler crashes with `KeyError: 'R2_ACCOUNT_ID'`
+### Crawler crashes with `KeyError: 'ENDPOINT'`
 
-This only happens if `R2_BUCKET_NAME` is set but the other R2 variables are missing. Either set all four R2 variables, or unset `R2_BUCKET_NAME` entirely to use local storage.
+This only happens if `BUCKET` is set but the other bucket variables are missing. Either set all bucket variables (`BUCKET`, `ENDPOINT`, `ACCESS_KEY_ID`, `SECRET_ACCESS_KEY`), or unset `BUCKET` entirely to use local storage.
 
 ### Frontend shows no results / CORS errors
 
@@ -431,9 +426,9 @@ Check two things:
 1. `frontend/config.js` points to the correct Railway URL (no trailing slash)
 2. Your Neocities domain (`https://indysearch.neocities.org`) is in the CORS allow list in `search_api/main.py`. If you use a different Neocities site name, add it to the `allow_origins` list.
 
-### Railway volume not shared between services
+### Reindex not happening after crawl
 
-The API and crawler should both mount the same Railway volume at `/app/data/index`. If they have separate volumes, the crawler builds an index that the API can't see. In Railway, you can share a volume across services in the same project.
+Make sure the crawler's `API_URL` environment variable is set to the API's internal Railway URL (e.g., `http://indysearch-api.railway.internal:8000`). The crawler triggers the API's `/admin/reindex` endpoint after finishing Phase 3. If `API_URL` is not set, the crawler tries to build the index locally (which won't be visible to the API on Railway since they have separate volumes).
 
 ---
 
@@ -445,6 +440,6 @@ The API and crawler should both mount the same Railway volume at `/app/data/inde
 | Railway Crawler | ~$1-2 | Only runs during cron (hours/month) |
 | Railway PostgreSQL | ~$2-3 | Small database |
 | Railway Volume | ~$0.50-1 | Tantivy index ~1-2GB |
-| Cloudflare R2 | $0 | Free tier: 10GB storage, 10M reads/month |
+| Railway Bucket | ~$0.15 | $0.015/GB-month, free egress and API calls |
 | Neocities | $0 | Free tier: 1GB storage, 200GB bandwidth |
 | **Total** | **~$5-10/month** | Likely covered by Railway Pro plan's $5 credit |

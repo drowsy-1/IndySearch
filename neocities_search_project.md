@@ -10,7 +10,7 @@ Neocities is the spiritual successor to GeoCities: a free static web hosting pla
 
 This project builds a dedicated search engine for the Neocities ecosystem. It discovers sites through the platform's browse page, crawls their public HTML with ethical rate-limiting, extracts clean text, and indexes it for fast full-text search with BM25 ranking. The frontend is a static site hosted on Neocities itself — a search engine for Neocities, on Neocities.
 
-The backend infrastructure runs entirely on Railway, leveraging its persistent services, cron scheduling, managed PostgreSQL, and persistent volumes. Cloudflare R2 provides cold storage for compressed HTML archives at near-zero cost.
+The backend infrastructure runs entirely on Railway, leveraging its persistent services, cron scheduling, managed PostgreSQL, persistent volumes, and S3-compatible Storage Buckets for compressed text archives.
 
 ---
 
@@ -20,7 +20,7 @@ The backend infrastructure runs entirely on Railway, leveraging its persistent s
 
 - **Full-text search across Neocities** — users enter a query, get ranked results from hundreds of thousands of indie web pages with sub-100ms latency
 - **Ethical crawling** — respect robots.txt, use honest User-Agent identification, maintain polite rate limits (1-2s between requests), and provide opt-out mechanisms for site owners
-- **Low operational cost** — target $10-20/month total by leveraging Railway's usage-based billing, R2's zero-egress pricing, and Neocities' free hosting tier
+- **Low operational cost** — target $10-20/month total by leveraging Railway's usage-based billing, Railway Bucket's free-egress pricing, and Neocities' free hosting tier
 
 ### Secondary
 
@@ -61,7 +61,7 @@ The backend infrastructure runs entirely on Railway, leveraging its persistent s
 │  ┌────────────────────────▼────────────────────────────┐     │
 │  │  PostgreSQL (Railway managed)                       │     │
 │  │  - sites: catalog, metadata, indexing state         │     │
-│  │  - documents: doc metadata + R2 refs (no body text) │     │
+│  │  - documents: doc metadata + storage refs (no body text) │     │
 │  │  - crawl_queue: queue with skip logic columns       │     │
 │  └────────────────────────▲────────────────────────────┘     │
 │                           │ writes to                        │
@@ -79,7 +79,7 @@ The backend infrastructure runs entirely on Railway, leveraging its persistent s
                          │ stores compressed parsed text only
                          ▼
               ┌──────────────────────────┐
-              │  Cloudflare R2           │
+              │  Railway Storage Bucket  │
               │  Long-term storage       │
               │  zstd-compressed         │
               │  extracted text (no HTML) │
@@ -119,11 +119,11 @@ At the end of Phase 1, the database contains a full catalog of every known Neoci
 10. **Fetch HTML** — Download pages from queued sites with ethical rate limiting (1-2s delay between requests)
 11. **Discover sub-pages** — Parse each page's HTML for internal links; add discovered sub-page URLs to the crawl queue for that site (up to 50 pages per site)
 12. **Extract text** — Strip HTML structure with trafilatura (`favor_recall=True`) to produce clean text + metadata; discard the raw HTML after extraction
-13. **Compress and store parsed text** — Compress the extracted text with zstd (dictionary-trained) and store only the compressed parsed text to R2 for long-term storage; raw HTML is not retained
+13. **Compress and store parsed text** — Compress the extracted text with zstd (dictionary-trained) and store only the compressed parsed text to the storage bucket for long-term storage; raw HTML is not retained
 
 #### Phase 4: Indexing & serving
 
-14. **Write to PostgreSQL** — Store extracted document metadata (title, URL, path, word count, etc.) in the `documents` table; the `body` column holds a reference to the compressed text in R2 or is populated on demand
+14. **Write to PostgreSQL** — Store extracted document metadata (title, URL, path, word count, etc.) in the `documents` table; the `body` column holds a reference to the compressed text in the storage bucket or is populated on demand
 15. **Build Tantivy index** — Index all unindexed documents into the Tantivy inverted index on the search API's persistent volume
 16. **Update queue state** — Set `has_been_indexed = TRUE` and `last_indexed = NOW()` for all successfully processed sites
 17. **Serve** — Static JS frontend on Neocities sends queries to the Railway-hosted FastAPI search API
@@ -226,7 +226,7 @@ Trafilatura is purpose-built for extracting article/page content from HTML while
 |-----------|-----------|------|
 | **Hot storage** | **Railway PostgreSQL** | Extracted documents, site metadata, crawl state — everything the search API and crawler need at low latency |
 | **Index storage** | **Railway Volume** (SSD) | Tantivy index files; persistent across deploys; mmap-friendly |
-| **Cold storage** | **Cloudflare R2** | Compressed parsed text for long-term storage, snippet generation, and reprocessing |
+| **Cold storage** | **Railway Storage Bucket** | Compressed parsed text for long-term storage, snippet generation, and reprocessing |
 | **Compression** | **zstd** (Zstandard) with trained dictionary | Per-document compression of extracted text only (raw HTML is discarded after extraction) |
 
 **Why zstd with dictionary training:**
@@ -240,12 +240,12 @@ Standard compression algorithms perform poorly on small files (1-10 KB) because 
 - **Total compressed corpus:** ~4-17 GB extracted text compresses to ~0.8-3 GB with dictionary
 - **Raw HTML is NOT stored** — only the parsed text output from trafilatura is compressed and retained; this dramatically reduces long-term storage requirements
 
-**Why R2 for cold storage:**
+**Why a Railway Storage Bucket for cold storage:**
 
-- **Zero egress fees** — the killer feature; the search API can read archived documents from R2 without transfer costs
+- **Free egress and API operations** — the search API can read archived documents from the bucket without transfer costs
 - **S3-compatible API** — use boto3 or any S3 SDK; no vendor-specific client
-- **Free tier:** 10 GB storage, 1M Class A (write) ops, 10M Class B (read) ops per month
-- **Paid:** $0.015/GB/month storage — the full compressed archive costs pennies
+- **$0.015/GB/month storage** — the full compressed archive costs pennies
+- **Same platform** — keeps all infrastructure on Railway; no external accounts or credentials to manage
 - **Use case:** compressed parsed text storage for generating search result snippets on demand and reprocessing if the indexing pipeline changes; raw HTML is not retained to minimize long-term storage costs
 
 **Why PostgreSQL (not SQLite) for operational data:**
@@ -262,7 +262,7 @@ Standard compression algorithms perform poorly on small files (1-10 KB) because 
 |-----------|-----------|------|
 | **Backend deploy** | Railway (GitHub integration) | Push to main → auto-deploy all services |
 | **Frontend deploy** | Neocities CLI or GitHub Actions | `neocities push build/` or automated via `deploy-to-neocities` action |
-| **Environment config** | Railway Variables | API keys, database URLs, R2 credentials — shared across services |
+| **Environment config** | Railway Variables | API keys, database URLs, bucket credentials — shared across services |
 
 **Railway project structure:**
 
@@ -281,7 +281,7 @@ Railway Project: neocities-search
 │   ├── queue.py              (Phase 2: build crawl queue with skip logic)
 │   ├── crawl.py              (Phase 3: async HTTP crawler + sub-page discovery)
 │   ├── extract.py            (Phase 3: trafilatura pipeline → text only)
-│   └── store.py              (Phase 3: zstd compress parsed text → R2 upload)
+│   └── store.py              (Phase 3: zstd compress parsed text → bucket upload)
 │
 └── PostgreSQL               (Railway managed)
     ├── sites
@@ -327,13 +327,13 @@ CREATE TABLE documents (
     word_count      INTEGER DEFAULT 0,
     extracted_at    TIMESTAMPTZ DEFAULT NOW(),
     indexed         BOOLEAN DEFAULT FALSE,    -- has this been added to Tantivy?
-    r2_key          TEXT,                     -- compressed parsed text key in R2 (no raw HTML stored)
+    storage_key     TEXT,                     -- compressed parsed text key in bucket (no raw HTML stored)
     UNIQUE(site_id, path)
 );
 -- Note: the body text is NOT stored in PostgreSQL. It is compressed with zstd
--- and stored in R2 (referenced by r2_key) to save on database storage costs.
--- The Tantivy index holds the searchable text; R2 holds the compressed text
--- for snippet generation and reprocessing.
+-- and stored in a Railway Storage Bucket (referenced by storage_key) to save
+-- on database storage costs. The Tantivy index holds the searchable text;
+-- the bucket holds the compressed text for snippet generation and reprocessing.
 
 -- Crawl queue: built during Phase 2, consumed during Phase 3
 CREATE TABLE crawl_queue (
@@ -418,15 +418,14 @@ Used only to deploy the search engine's own frontend to its Neocities site. Not 
 | **Subtotal** | | **~$5-10** |
 | Pro plan included credits | -$20 | Absorbs most/all usage |
 
-### Cloudflare R2 (monthly)
+### Railway Storage Bucket (monthly)
 
 | Resource | Usage | Cost |
 |----------|-------|------|
-| Storage | ~1-3 GB compressed text | Free tier (10 GB included) |
-| Class A ops (writes) | ~50K/month (re-crawl) | Free tier (1M included) |
-| Class B ops (reads) | ~100K/month (snippets) | Free tier (10M included) |
+| Storage | ~1-3 GB compressed text | ~$0.02-0.05 ($0.015/GB-month) |
+| API operations | Unlimited | **Free** |
 | Egress | Any amount | **Free** |
-| **Subtotal** | | **$0** |
+| **Subtotal** | | **~$0.05** |
 
 ### Neocities (monthly)
 
@@ -436,7 +435,7 @@ Used only to deploy the search engine's own frontend to its Neocities site. Not 
 
 ### Total Estimated Monthly Cost
 
-**$5-10/month**, potentially fully covered by Railway Pro's included credits depending on query volume. R2 and Neocities both stay within free tiers.
+**$5-10/month**, potentially fully covered by Railway Pro's included credits depending on query volume. Neocities stays within free tier.
 
 ---
 
@@ -451,7 +450,7 @@ Used only to deploy the search engine's own frontend to its Neocities site. Not 
 | Extracted text per page (avg, after trafilatura) | ~2-5 KB |
 | Total extracted text | ~7-17 GB |
 | Tantivy index size | ~1.5-4 GB |
-| Compressed parsed text in R2 (zstd + dict) | ~1-3 GB |
+| Compressed parsed text in the storage bucket (zstd + dict) | ~1-3 GB |
 | Raw HTML stored | **None** — discarded after text extraction to save storage |
 
 ---
@@ -460,10 +459,10 @@ Used only to deploy the search engine's own frontend to its Neocities site. Not 
 
 | Phase | Duration | Description |
 |-------|----------|-------------|
-| **Setup** | 1-2 days | Railway project, Postgres schema, R2 bucket, Neocities site |
+| **Setup** | 1-2 days | Railway project, Postgres schema, Storage Bucket, Neocities site |
 | **Phase 1: Discovery** | 1-2 days | Browse page scraper → full domain list → API metadata enrichment → deduplicated site catalog |
 | **Phase 2: Queue build** | <1 day | Build crawl queue with `has_been_indexed`/`last_indexed`/`last_updated` columns; first run queues all sites |
-| **Phase 3: Initial crawl** | 5-7 days | ~358K sites at polite crawl speeds (1-2s delay); extract text, discard HTML, compress and store parsed text to R2 |
+| **Phase 3: Initial crawl** | 5-7 days | ~358K sites at polite crawl speeds (1-2s delay); extract text, discard HTML, compress and store parsed text to the storage bucket |
 | **Phase 4: Indexing** | 1-2 days | Tantivy index build from extracted text |
 | **Search API** | 1-2 days | FastAPI endpoints, CORS, query parsing |
 | **Frontend** | 1-2 days | Static search interface on Neocities |
@@ -480,13 +479,13 @@ Used only to deploy the search engine's own frontend to its Neocities site. Not 
 
 **PostgreSQL over SQLite for operational data:** The crawler and search API are separate Railway services. SQLite is single-process; Postgres handles concurrent access from multiple services over Railway's internal network without locking issues.
 
-**R2 over Railway Volumes for parsed text storage:** Railway volumes are SSD-backed and billed for provisioned size — ideal for the Tantivy index that needs fast random access. The compressed parsed text archive is write-once-read-rarely data that doesn't need SSD performance. R2 at $0.015/GB with zero egress is the economical choice for long-term storage. Raw HTML is discarded after text extraction to minimize storage costs.
+**Railway Bucket over Railway Volume for parsed text storage:** Railway volumes are SSD-backed and billed for provisioned size — ideal for the Tantivy index that needs fast random access. The compressed parsed text archive is write-once-read-rarely data that doesn't need SSD performance. A Railway Storage Bucket at $0.015/GB with free egress and API calls is the economical choice for long-term storage, and keeps all infrastructure on one platform. Raw HTML is discarded after text extraction to minimize storage costs.
 
 **No proxies:** Neocities doesn't run aggressive anti-bot measures. Polite crawling with honest User-Agent identification and 1-2s delays avoids blocks without the cost, complexity, and ethical concerns of proxy rotation. If rate-limited, the correct response is to slow down, not evade.
 
 **trafilatura with `favor_recall=True`:** Neocities sites are hand-crafted HTML with unconventional structure. Trafilatura's default precision mode may miss content that isn't in standard `<article>` or `<main>` tags. `favor_recall=True` casts a wider net, which is correct for personal websites where the entire page is the content.
 
-**Frontend on Neocities, not Cloudflare Pages:** Philosophically coherent (a Neocities search engine on Neocities), and the free tier is more than sufficient for a static search interface. The only constraint is no server-side execution — all search logic happens via `fetch()` to the Railway API.
+**Frontend on Neocities, not elsewhere:** Philosophically coherent (a Neocities search engine on Neocities), and the free tier is more than sufficient for a static search interface. The only constraint is no server-side execution — all search logic happens via `fetch()` to the Railway API.
 
 ---
 
@@ -513,7 +512,7 @@ Database:        PostgreSQL (Railway managed)
 Index Storage:   Railway Volume (SSD, persistent)
                  ~1.5-4 GB for Tantivy index
 
-Cold Storage:    Cloudflare R2 (S3-compatible, zero egress)
+Cold Storage:    Railway Storage Bucket (S3-compatible, free egress)
                  Compressed parsed text only (no raw HTML), zstd with trained dictionary
 
 Compression:     zstd (Zstandard) with 64 KB trained dictionary

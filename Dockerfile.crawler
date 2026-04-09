@@ -2,15 +2,10 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install shared and search_api dependencies (needed for indexing phase)
 COPY crawler/requirements.txt /tmp/crawler-requirements.txt
-COPY search_api/requirements.txt /tmp/search-api-requirements.txt
-RUN pip install --no-cache-dir \
-    -r /tmp/crawler-requirements.txt \
-    -r /tmp/search-api-requirements.txt
+RUN pip install --no-cache-dir -r /tmp/crawler-requirements.txt
 
 COPY crawler/ crawler/
-COPY search_api/ search_api/
 COPY pipeline.py .
 
 CMD ["python", "pipeline.py"]

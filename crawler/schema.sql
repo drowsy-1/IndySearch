@@ -20,7 +20,7 @@ CREATE INDEX IF NOT EXISTS idx_sites_last_updated ON sites(last_updated DESC);
 CREATE INDEX IF NOT EXISTS idx_sites_has_been_indexed ON sites(has_been_indexed);
 
 -- One row per crawled page. Body text is NOT stored here — it lives
--- compressed in storage (local filesystem / R2) referenced by r2_key.
+-- compressed in storage (local filesystem or S3 bucket) referenced by storage_key.
 -- body_snippet holds the first ~500 chars for quick display.
 CREATE TABLE IF NOT EXISTS documents (
     id              SERIAL PRIMARY KEY,
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS documents (
     word_count      INTEGER DEFAULT 0,
     extracted_at    TIMESTAMPTZ DEFAULT NOW(),
     indexed         BOOLEAN DEFAULT FALSE,
-    r2_key          TEXT,
+    storage_key          TEXT,
     UNIQUE(site_id, path)
 );
 
