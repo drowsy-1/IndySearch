@@ -55,6 +55,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://indysearch.neocities.org",
+        "https://postreq.jbc.lol",
         "http://localhost:3000",
         "http://localhost:5500",
         "http://localhost:8080",
