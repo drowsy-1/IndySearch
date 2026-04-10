@@ -153,6 +153,24 @@ async def build_crawl_queue(pool: asyncpg.Pool, dry_run: bool = False) -> dict:
     return {"queued": queued, "skipped": skipped, "already_queued": already_queued}
 
 
+async def recover_stale_queue(pool: asyncpg.Pool, stale_minutes: int = 60) -> int:
+    """Reset in_progress sites that have been stuck for too long (crash recovery).
+
+    Returns the number of recovered entries.
+    """
+    async with pool.acquire() as conn:
+        result = await conn.execute("""
+            UPDATE crawl_queue
+            SET status = 'pending'
+            WHERE status = 'in_progress'
+              AND last_attempt < NOW() - MAKE_INTERVAL(mins => $1)
+        """, stale_minutes)
+        count = int(result.split()[-1])
+        if count:
+            logger.info(f"Recovered {count} stale in_progress queue entries")
+        return count
+
+
 async def get_next_queued_sites(pool: asyncpg.Pool, limit: int = 10) -> list[asyncpg.Record]:
     """Fetch pending sites from crawl queue, ordered by priority."""
     query = """

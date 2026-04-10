@@ -332,6 +332,8 @@ async def crawl_site(
 
 async def run_crawl(pool, args: argparse.Namespace) -> None:
     """Pull sites from the queue and crawl them."""
+    await db.recover_stale_queue(pool)
+
     async with make_client() as client:
         sites_crawled = 0
         total_pages = 0

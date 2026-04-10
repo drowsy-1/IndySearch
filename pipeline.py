@@ -166,4 +166,23 @@ if __name__ == "__main__":
         datefmt="%H:%M:%S",
     )
 
-    asyncio.run(run_pipeline(args))
+    import sys
+    import time
+
+    MAX_RETRIES = 10
+    RETRY_DELAY = 30  # seconds
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            asyncio.run(run_pipeline(args))
+            break  # clean exit
+        except KeyboardInterrupt:
+            logger.info("Interrupted, exiting")
+            sys.exit(0)
+        except Exception:
+            logger.exception(f"Pipeline crashed (attempt {attempt}/{MAX_RETRIES})")
+            if attempt == MAX_RETRIES:
+                logger.error("Max retries reached, exiting")
+                sys.exit(1)
+            logger.info(f"Restarting in {RETRY_DELAY}s...")
+            time.sleep(RETRY_DELAY)
