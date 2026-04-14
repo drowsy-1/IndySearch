@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS sites (
     sitename          TEXT UNIQUE NOT NULL,
     url               TEXT NOT NULL,
     custom_domain     TEXT,
-    hits              INTEGER DEFAULT 0,
+    hits              BIGINT DEFAULT 0,
     tags              TEXT[] DEFAULT '{}',
     created_at        TIMESTAMPTZ,
     last_updated      TIMESTAMPTZ,

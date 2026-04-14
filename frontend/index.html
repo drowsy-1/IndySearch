@@ -249,49 +249,39 @@
             fill: #1a2f1a;
         }
 
-        .links-section {
-            margin-top: 40px;
-            display: flex;
-            gap: 20px;
-            flex-wrap: wrap;
-            justify-content: center;
-        }
-
-        .link-btn {
-            padding: 12px 25px;
-            font-family: 'Special Elite', monospace;
-            font-size: 0.95rem;
-            color: #b8d4be;
-            background: rgba(26, 47, 35, 0.8);
-            border: 3px solid #3d5a4a;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            text-decoration: none;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .link-btn::before {
-            content: '';
-            position: absolute;
+        .top-nav {
+            position: fixed;
             top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(244, 208, 63, 0.2), transparent);
-            transition: left 0.4s ease;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            padding: 12px 20px;
+            z-index: 50;
         }
 
-        .link-btn:hover {
-            border-color: #f4d03f;
+        .nav-link {
+            font-family: 'Special Elite', monospace;
+            font-size: 0.85rem;
+            color: #7ab892;
+            text-decoration: none;
+            padding: 6px 14px;
+            border: 1px solid transparent;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+
+        .nav-link:hover {
             color: #f4d03f;
-            transform: translateY(-3px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            border-color: #3d5a4a;
         }
 
-        .link-btn:hover::before {
-            left: 100%;
+        .search-mode-tabs {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+            justify-content: center;
         }
 
         .mystery-symbol {
@@ -486,21 +476,15 @@
 
         /* Mobile adjustments */
         @media (max-width: 600px) {
-            .links-section {
-                flex-direction: column;
-                align-items: stretch;
+            .top-nav {
+                gap: 6px;
+                padding: 8px 12px;
             }
-            
-            .link-btn {
-                text-align: center;
-            }
-        }
 
-        .search-tabs {
-            display: flex;
-            gap: 8px;
-            margin-top: 12px;
-            justify-content: center;
+            .nav-link {
+                font-size: 0.75rem;
+                padding: 4px 10px;
+            }
         }
 
         .tab-btn {
@@ -577,6 +561,12 @@
     </style>
 </head>
 <body>
+    <nav class="top-nav">
+        <a href="about.html" class="nav-link">About</a>
+        <a href="stats.html" class="nav-link">Stats</a>
+        <a href="optout.html" class="nav-link">Opt Out</a>
+    </nav>
+
     <div class="forest-container" id="forest">
         <div class="mist"></div>
         <div class="mist"></div>
@@ -597,13 +587,7 @@
             </button>
         </div>
 
-        <div class="links-section">
-            <a href="about.html" class="link-btn">About</a>
-            <a href="stats.html" class="link-btn">Stats</a>
-            <a href="optout.html" class="link-btn">Opt Out</a>
-        </div>
-
-        <div class="search-tabs" id="searchTabs" style="display:none;">
+        <div class="search-mode-tabs">
             <button class="tab-btn active" id="tabWeb" onclick="switchTab('web')">Web</button>
             <button class="tab-btn" id="tabImages" onclick="switchTab('images')">Images</button>
         </div>
@@ -954,7 +938,6 @@
         const searchInput = document.getElementById('searchInput');
         const searchBtn = document.getElementById('searchBtn');
         const resultsContainer = document.getElementById('resultsContainer');
-        const searchTabs = document.getElementById('searchTabs');
 
         function switchTab(mode) {
             searchMode = mode;
@@ -971,7 +954,6 @@
             currentOffset = offset;
 
             document.querySelector('.main-content').classList.add('has-results');
-            searchTabs.style.display = 'flex';
             resultsContainer.innerHTML = '<div class="results-loading">Searching...</div>';
 
             try {
