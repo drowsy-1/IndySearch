@@ -53,11 +53,21 @@ async def get_unenriched_sites(pool: asyncpg.Pool, limit: int = 1000) -> list[as
     query = """
         SELECT sitename FROM sites
         WHERE created_at IS NULL
+          AND status != 'dead'
         ORDER BY id
         LIMIT $1
     """
     async with pool.acquire() as conn:
         return await conn.fetch(query, limit)
+
+
+async def mark_site_dead(pool: asyncpg.Pool, sitename: str) -> None:
+    """Mark a site as dead (no longer exists on Neocities)."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE sites SET status = 'dead' WHERE sitename = $1",
+            sitename,
+        )
 
 
 async def update_site_metadata(pool: asyncpg.Pool, sitename: str, metadata: dict) -> None:

@@ -223,6 +223,7 @@ async def run_phase_1b(pool, args: argparse.Namespace) -> None:
                         await db.update_site_metadata(pool, sitename, metadata)
                         enriched_count += 1
                     else:
+                        await db.mark_site_dead(pool, sitename)
                         failed_count += 1
                 except Exception:
                     logger.exception(f"Failed to enrich {sitename}")
