@@ -373,8 +373,8 @@ async def run_crawl(pool, args: argparse.Namespace) -> None:
                     total_pages += page_count
                     logger.info(f"[{sitename}] Done — {page_count} pages extracted")
 
-                except Exception:
-                    logger.exception(f"[{sitename}] Crawl failed")
+                except Exception as exc:
+                    logger.error(f"[{sitename}] Crawl failed: {type(exc).__name__}: {exc}")
                     await db.update_queue_status(pool, site_id, "failed")
 
             if remaining is not None:
