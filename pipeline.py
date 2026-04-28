@@ -53,7 +53,7 @@ async def phase_queue(pool):
     )
 
 
-async def phase_crawl(pool, max_sites=None, max_pages_per_site=50, crawl_delay=1.5):
+async def phase_crawl(pool, max_sites=None, max_pages_per_site=50, crawl_delay=1.0, concurrency=10):
     """Phase 3: crawl sites and extract text."""
     from crawler import crawl
 
@@ -61,6 +61,7 @@ async def phase_crawl(pool, max_sites=None, max_pages_per_site=50, crawl_delay=1
         max_sites=max_sites,
         max_pages_per_site=max_pages_per_site,
         crawl_delay=crawl_delay,
+        concurrency=concurrency,
     )
 
     logger.info("=== Phase 3: Crawling sites ===")
@@ -125,6 +126,7 @@ async def run_pipeline(args):
                 max_sites=args.max_sites,
                 max_pages_per_site=args.max_pages_per_site,
                 crawl_delay=args.crawl_delay,
+                concurrency=args.concurrency,
             )
             if shutdown_event.is_set():
                 return
@@ -148,7 +150,8 @@ def parse_args():
     parser.add_argument("--enrich-limit", type=int, default=None, help="Limit API enrichment (discover phase)")
     parser.add_argument("--max-sites", type=int, default=None, help="Limit sites to crawl (crawl phase)")
     parser.add_argument("--max-pages-per-site", type=int, default=50, help="Max pages per site (default: 50)")
-    parser.add_argument("--crawl-delay", type=float, default=1.5, help="Seconds between crawl requests (default: 1.5)")
+    parser.add_argument("--crawl-delay", type=float, default=1.0, help="Seconds between crawl requests per site (default: 1.0)")
+    parser.add_argument("--concurrency", type=int, default=10, help="Number of sites to crawl concurrently (default: 10)")
     parser.add_argument("--full-reindex", action="store_true", help="Force full index rebuild instead of incremental")
     parser.add_argument("--api-url", default=os.environ.get("API_URL"),
                         help="API service URL to trigger remote reindex (default: API_URL env var)")

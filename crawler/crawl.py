@@ -330,13 +330,53 @@ async def crawl_site(
 # Main crawl loop
 # ---------------------------------------------------------------------------
 
+async def _crawl_one(
+    sem: asyncio.Semaphore,
+    client: httpx.AsyncClient,
+    pool,
+    site,
+    max_pages: int,
+    crawl_delay: float,
+    counters: dict,
+) -> None:
+    """Crawl a single site under a concurrency semaphore."""
+    site_id = site["site_id"]
+    site_url = site["url"]
+    sitename = site["sitename"]
+
+    async with sem:
+        if shutdown_event.is_set():
+            return
+
+        logger.info(f"Crawling [{sitename}] {site_url}")
+        await db.update_queue_status(pool, site_id, "in_progress")
+
+        try:
+            page_count = await crawl_site(
+                client, pool, site_id, site_url, sitename,
+                max_pages=max_pages,
+                crawl_delay=crawl_delay,
+            )
+            await db.mark_site_crawled(pool, site_id, page_count)
+            counters["sites"] += 1
+            counters["pages"] += page_count
+            logger.info(f"[{sitename}] Done — {page_count} pages extracted")
+
+        except Exception as exc:
+            logger.error(f"[{sitename}] Crawl failed: {type(exc).__name__}: {exc}")
+            await db.update_queue_status(pool, site_id, "failed")
+
+
 async def run_crawl(pool, args: argparse.Namespace) -> None:
-    """Pull sites from the queue and crawl them."""
+    """Pull sites from the queue and crawl them concurrently."""
     await db.recover_stale_queue(pool)
 
+    concurrency = getattr(args, "concurrency", 10)
+    sem = asyncio.Semaphore(concurrency)
+    logger.info(f"Crawl concurrency: {concurrency}")
+
     async with make_client() as client:
-        sites_crawled = 0
-        total_pages = 0
+        counters = {"sites": 0, "pages": 0}
         remaining = args.max_sites
 
         while True:
@@ -344,38 +384,20 @@ async def run_crawl(pool, args: argparse.Namespace) -> None:
                 logger.info("Shutdown requested, stopping crawl")
                 break
 
-            batch_limit = min(10, remaining) if remaining else 10
+            batch_limit = min(concurrency * 2, remaining) if remaining else concurrency * 2
             sites = await db.get_next_queued_sites(pool, limit=batch_limit)
 
             if not sites:
                 logger.info("No more sites in queue")
                 break
 
-            for site in sites:
-                if shutdown_event.is_set():
-                    break
-
-                site_id = site["site_id"]
-                site_url = site["url"]
-                sitename = site["sitename"]
-
-                logger.info(f"Crawling [{sitename}] {site_url}")
-                await db.update_queue_status(pool, site_id, "in_progress")
-
-                try:
-                    page_count = await crawl_site(
-                        client, pool, site_id, site_url, sitename,
-                        max_pages=args.max_pages_per_site,
-                        crawl_delay=args.crawl_delay,
-                    )
-                    await db.mark_site_crawled(pool, site_id, page_count)
-                    sites_crawled += 1
-                    total_pages += page_count
-                    logger.info(f"[{sitename}] Done — {page_count} pages extracted")
-
-                except Exception as exc:
-                    logger.error(f"[{sitename}] Crawl failed: {type(exc).__name__}: {exc}")
-                    await db.update_queue_status(pool, site_id, "failed")
+            tasks = [
+                asyncio.create_task(
+                    _crawl_one(sem, client, pool, site, args.max_pages_per_site, args.crawl_delay, counters)
+                )
+                for site in sites
+            ]
+            await asyncio.gather(*tasks)
 
             if remaining is not None:
                 remaining -= len(sites)
@@ -385,11 +407,11 @@ async def run_crawl(pool, args: argparse.Namespace) -> None:
         stats = await db.get_crawl_stats(pool)
         logger.info(
             f"Crawl session complete. "
-            f"Sites crawled: {sites_crawled} | Pages extracted: {total_pages} | "
+            f"Sites crawled: {counters['sites']} | Pages extracted: {counters['pages']} | "
             f"Queue pending: {stats['pending']} | Documents total: {stats['documents']}"
         )
 
-        await db.record_crawl_stats(pool, sites_crawled, total_pages)
+        await db.record_crawl_stats(pool, counters["sites"], counters["pages"])
 
 
 # ---------------------------------------------------------------------------
@@ -400,7 +422,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="IndySearch Phase 3: Site Crawler")
     parser.add_argument("--max-sites", type=int, default=None, help="Limit sites to crawl (testing)")
     parser.add_argument("--max-pages-per-site", type=int, default=50, help="Max pages per site (default: 50)")
-    parser.add_argument("--crawl-delay", type=float, default=1.5, help="Seconds between requests (default: 1.5)")
+    parser.add_argument("--crawl-delay", type=float, default=1.0, help="Seconds between requests per site (default: 1.0)")
+    parser.add_argument("--concurrency", type=int, default=10, help="Number of sites to crawl concurrently (default: 10)")
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     return parser.parse_args()
 

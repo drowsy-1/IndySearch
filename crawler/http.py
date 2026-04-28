@@ -69,4 +69,5 @@ def make_client() -> httpx.AsyncClient:
         headers={"User-Agent": USER_AGENT},
         timeout=httpx.Timeout(HTTP_TIMEOUT),
         follow_redirects=True,
+        limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
     )
